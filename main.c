@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <assert.h>
 #include <ctype.h>
-
+#include <stdint.h>
 // stretchy buffers
 
 //buf_push
@@ -95,7 +95,7 @@ void buf_test()
 
 
 typedef enum {
-        TOKEN_INT,
+        TOKEN_INT = 128,
         TOKEN_OPERATOR,
         TOKEN_IDENT,
         TOKEN_KEYWORD
@@ -103,8 +103,15 @@ typedef enum {
 
 typedef struct {
         tokenKind kind;
+
+        union {
+                uint64_t val;
+                struct {
+                        char *buf, *end;
+                };
+        };
         
-} token_t;
+}token_t;
 
 token_t *tokenizer(char *stream)
 {
@@ -119,18 +126,22 @@ token_t *tokenizer(char *stream)
                         while(*stream && isalnum(*stream++));
                         end = stream-1;
 
-                        buf_push(tokens, (token_t){TOKEN_IDENT});
+                        buf_push(tokens, ((token_t){.kind = TOKEN_IDENT, .buf = start, .end = end}));
                         continue;
                 }
-
+ 
                 if (isdigit(*stream)) {
-                        while(*stream && isdigit(*stream++));
-                        end = stream-1;
+                        uint64_t val = 0;
+                        while(*stream && isdigit(*stream)) {
+                                val = val * 10 + *stream - '0';
+                                stream++;
+                        }
 
-                        buf_push(tokens, (token_t){TOKEN_INT});
+                        buf_push(tokens, ((token_t){.kind = TOKEN_INT, .val = val}));
                         continue;
                 }
-              
+
+                buf_push(tokens, ((token_t){.kind = *stream}));
                 stream++;
         }
 
@@ -139,7 +150,7 @@ token_t *tokenizer(char *stream)
 
 void lex_test()
 {
-        char *prog = "+ 123,HELLO(), abc";
+        char *prog = "+ 123,HELLO(), abc32343 84384384";
         token_t *token_arr = NULL;
 
         token_arr = tokenizer(prog);
@@ -147,7 +158,9 @@ void lex_test()
         printf("tokens len = %d\n", buf_len(token_arr));
 
         for (int i = 0; i < buf_len(token_arr); i++) {
-                printf("%d\n", token_arr[i].kind);
+                if (token_arr[i].kind == TOKEN_INT) {
+                        printf("%d\n", token_arr[i].val);
+                }
         }
 }
 
