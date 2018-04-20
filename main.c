@@ -62,14 +62,12 @@ void *buf_grow(void *_buf, int elem_size)
                 buf->cap = 1;
         } else {
                 buf = buf__hdr(_buf);
-
                 buf = xrealloc(buf, sizeof(struct bufHdr) + buf->cap * 2 * elem_size);
                 buf->cap = buf->cap * 2;
         }
 
         return (char *) buf + offsetof(struct bufHdr, buf_);
 }
-
 
 void buf_test()
 {
@@ -93,7 +91,6 @@ void buf_test()
         assert(buf_len(buf) == 0);
 }
 
-
 typedef enum {
         TOKEN_INT = 128,
         TOKEN_OPERATOR,
@@ -107,60 +104,151 @@ typedef struct {
         union {
                 uint64_t val;
                 struct {
-                        char *buf, *end;
+                        const char *start, *end;
                 };
         };
         
-}token_t;
+} token_t;
 
-token_t *tokenizer(char *stream)
+token_t token;
+char *stream;
+
+/*
+char *strings;
+
+void *str_intern(const char *string)
 {
-        char *start = NULL, *end = NULL;
-        token_t *tokens = NULL;
-
-        while (*stream) {
-                start = stream;
-                end = NULL;
-                
-                if (isalpha(*stream)) {
-                        while(*stream && isalnum(*stream++));
-                        end = stream-1;
-
-                        buf_push(tokens, ((token_t){.kind = TOKEN_IDENT, .buf = start, .end = end}));
-                        continue;
-                }
- 
-                if (isdigit(*stream)) {
-                        uint64_t val = 0;
-                        while(*stream && isdigit(*stream)) {
-                                val = val * 10 + *stream - '0';
-                                stream++;
-                        }
-
-                        buf_push(tokens, ((token_t){.kind = TOKEN_INT, .val = val}));
-                        continue;
-                }
-
-                buf_push(tokens, ((token_t){.kind = *stream}));
-                stream++;
+        for (int i = 0; i < buf_len(strings); i++) {
+                if (strcmp(string, strings[i]
         }
-
-        return tokens;
 }
+*/
+void next_token()
+{
+        switch (*stream) {
+        case '0':
+        case '1':
+        case '2':
+        case '3':
+        case '4':
+        case '5':
+        case '6':
+        case '7':
+        case '8':
+        case '9':
+        {
+                uint64_t val = 0;
+                while (*stream && isdigit(*stream)) {
+                        val = val * 10 + *stream - '0';
+                        stream++;
+                }
+                token.kind = TOKEN_INT;
+                token.val = val;
+                break;
+        }
+        case 'a':
+        case 'b':
+        case 'c':
+        case 'd':
+        case 'e':
+        case 'f':
+        case 'g':
+        case 'h':
+        case 'i':
+        case 'j':
+        case 'k':
+        case 'l':
+        case 'm':
+        case 'n':
+        case 'o':
+        case 'p':
+        case 'q':
+        case 'r':
+        case 's':
+        case 't':
+        case 'u':
+        case 'v':
+        case 'w':
+        case 'x':
+        case 'y':
+        case 'z':
+        case 'A':
+        case 'B':
+        case 'C':
+        case 'D':
+        case 'E':
+        case 'F':
+        case 'G':
+        case 'H':
+        case 'I':
+        case 'J':
+        case 'K':
+        case 'L':
+        case 'M':
+        case 'N':
+        case 'O':
+        case 'P':
+        case 'Q':
+        case 'R':
+        case 'S':
+        case 'T':
+        case 'U':
+        case 'V':
+        case 'W':
+        case 'X':
+        case 'Y':
+        case 'Z':
+        case '_':
+        {
+                const char *start = stream++;
+                const char *end = NULL;
+                
+                while (isalnum(*stream) || *stream == '_') {
+                        stream++;
+                }
+                
+                end = stream - 1;
+                
+                token.kind = TOKEN_IDENT;
+                token.start = start;
+                token.end = end;
+                break;
+        }
+        default:
+                token.kind = *stream++;
+                
+        }
+}
+
+void print_token()
+{
+        switch (token.kind) {
+        case TOKEN_INT:
+                printf("%d\n", token.val);
+                break;
+                
+        case TOKEN_IDENT:
+                printf("%.*s\n", (token.end - token.start + 1), token.start);
+                break;
+
+        default:
+                printf("token kind = %c\n", token.kind);
+        } 
+}
+
 
 void lex_test()
 {
         char *prog = "+ 123,HELLO(), abc32343 84384384";
         token_t *token_arr = NULL;
-
-        token_arr = tokenizer(prog);
-
-        printf("tokens len = %d\n", buf_len(token_arr));
-
-        for (int i = 0; i < buf_len(token_arr); i++) {
-                if (token_arr[i].kind == TOKEN_INT) {
-                        printf("%d\n", token_arr[i].val);
-                }
+        
+        stream = prog;
+        next_token();
+        
+        while (token.kind) {
+                print_token();
+                next_token();
+                buf_push(token_arr, token);
         }
 }
 
