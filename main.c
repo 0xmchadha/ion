@@ -5,6 +5,7 @@
 #include <assert.h>
 #include <ctype.h>
 #include <stdint.h>
+#include <string.h>
 // stretchy buffers
 
 //buf_push
@@ -78,7 +79,7 @@ void buf_test()
         assert(buf_len(buf) == 0);
         for (int i = 0; i < N; i++) {
                 buf_push(buf, i);
-        }
+          }
 
         assert(buf_len(buf) == N);
 
@@ -89,6 +90,8 @@ void buf_test()
         buf_free(buf);
         assert(buf == NULL);
         assert(buf_len(buf) == 0);
+
+        printf("buf test passed\n");
 }
 
 typedef enum {
@@ -113,16 +116,12 @@ typedef struct {
 token_t token;
 char *stream;
 
-/*
-char *strings;
-
-void *str_intern(const char *string)
+void init_keywords()
 {
-        for (int i = 0; i < buf_len(strings); i++) {
-                if (strcmp(string, strings[i]
-        }
+        char *if_k = str_intern("if");
+              
 }
-*/
+
 void next_token()
 {
         switch (*stream) {
@@ -236,7 +235,6 @@ void print_token()
         } 
 }
 
-
 void lex_test()
 {
         char *prog = "+ 123,HELLO(), abc32343 84384384";
@@ -252,9 +250,57 @@ void lex_test()
         }
 }
 
+
+struct internStr {
+        size_t len;
+        char *str;
+};
+
+struct internStr *interns = NULL;
+
+const char * str_intern_range(const char *start, const char *end)
+{
+        size_t len = end - start;
+        size_t i;
+        for (i = 0; i < buf_len(interns); i++) {
+                if (interns[i].len == len && !strncmp(interns[i].str, start, len)) {
+                        return interns[i].str;
+                }
+        }
+
+        char *strp = xmalloc(len + 1);
+        strncpy(strp, start, len);
+        strp[len] = '\0';
+
+        buf_push(interns, ((struct internStr){len, strp}));
+
+        return interns[i].str;
+}
+
+const char *str_intern(const char *str)
+{
+        return str_intern_range(str, str + strlen(str));
+}
+
+void str_intern_test()
+{
+        char a[] = "hello";
+        char b[] = "hello";
+        char c[] = "hell";
+
+        assert(a != b);
+        assert(str_intern(&a[0]) == str_intern(&b[0]));
+        assert(str_intern_range(&a[0], &a[strlen(a)-1]) != str_intern_range(&c[0], &b[strlen(c)-1]));
+
+        printf("string intern test passed\n");
+}
+
 int main()
 {
         buf_test();
         lex_test();
+        str_intern_test();
 }
+
+
 
