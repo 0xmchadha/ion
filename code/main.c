@@ -6,6 +6,7 @@
 #include <ctype.h>
 #include <stdint.h>
 #include <string.h>
+#include <stdbool.h>
 // stretchy buffers
 
 //buf_push
@@ -26,9 +27,10 @@ struct bufHdr {
 
 // macros to be used by clients
 #define buf_push(buf, val) (buf__fit(buf), ((buf)[buf__hdr(buf)->len++] = (val)))
-#define buf_len(buf) (buf ? (buf__hdr(buf)->len) : 0)
-#define buf_cap(buf) (buf ? buf__hdr(buf)->cap : 0)
+#define buf_len(buf) ((buf) ? (buf__hdr(buf)->len) : 0)
+#define buf_cap(buf) ((buf) ? buf__hdr(buf)->cap : 0)
 #define buf_free(buf) (buf) ? (free(buf__hdr(buf)), (buf) = NULL) : (void)0
+#define buf_pop(buf) ((buf) ? (buf__hdr(buf)->len--, (buf[buf_len(buf)])) : 0)
 
 void *xmalloc(size_t num_bytes)
 {
@@ -96,7 +98,6 @@ void buf_test()
 
 typedef enum {
         TOKEN_INT = 128,
-        TOKEN_OPERATOR,
         TOKEN_IDENT,
         TOKEN_KEYWORD
 } tokenKind;
@@ -113,17 +114,14 @@ typedef struct {
         
 } token_t;
 
+token_t token_prev;
 token_t token;
 char *stream;
 
-void init_keywords()
-{
-        char *if_k = str_intern("if");
-              
-}
-
 void next_token()
 {
+        token_prev = token;
+
         switch (*stream) {
         case '0':
         case '1':
@@ -215,7 +213,6 @@ void next_token()
         }
         default:
                 token.kind = *stream++;
-                
         }
 }
 
@@ -250,7 +247,6 @@ void lex_test()
         }
 }
 
-
 struct internStr {
         size_t len;
         char *str;
@@ -258,10 +254,11 @@ struct internStr {
 
 struct internStr *interns = NULL;
 
-const char * str_intern_range(const char *start, const char *end)
+const char *str_intern_range(const char *start, const char *end)
 {
         size_t len = end - start;
         size_t i;
+
         for (i = 0; i < buf_len(interns); i++) {
                 if (interns[i].len == len && !strncmp(interns[i].str, start, len)) {
                         return interns[i].str;
@@ -282,6 +279,12 @@ const char *str_intern(const char *str)
         return str_intern_range(str, str + strlen(str));
 }
 
+void init_keywords()
+{
+        const char *if_k = str_intern("if");
+        const char *else_k = str_intern("else");
+}
+
 void str_intern_test()
 {
         char a[] = "hello";
@@ -295,11 +298,135 @@ void str_intern_test()
         printf("string intern test passed\n");
 }
 
+/*******************/
+/* D -> num | (A)  */
+/* C -> D | -D     */
+/* B -> C (*\/ C)* */
+/* A -> B (+/- B)* */
+/*******************/
+
+// 2+3  -> (+ 2 3)
+// 2*3  -> (* 2 3)
+int *stack;
+
+void stack_push(int a)
+{
+        buf_push(stack, a);
+}
+
+int stack_pop()
+{
+        int ret = buf_pop(stack);
+        return ret;
+}
+
+bool match_token(tokenKind kind)
+{
+        if (token.kind == kind) {
+                next_token();
+                return true;
+        }
+
+        return false;
+}
+
+void parse_A();
+
+void parse_D()
+{
+        if (match_token(TOKEN_INT)) {
+                stack_push(token_prev.val);
+        } else {
+                match_token('(');
+                parse_A();
+                match_token(')');
+        }
+}
+
+void parse_C()
+{
+        bool unary = false;
+
+        if (match_token('-')) {
+                unary = true;
+        }
+
+        parse_D();
+
+        if (unary) {
+                int a = stack_pop();
+                stack_push(-a);
+        }
+}
+
+void parse_B()
+{
+        parse_C();
+
+        while (token.kind) {
+                if (match_token('*') || match_token('/')) {
+                        token_t operator = token_prev;
+                        parse_C();
+                        int op1 = stack_pop();
+                        int op2 = stack_pop();
+
+                        if (operator.kind == '*') {
+                                stack_push(op1 * op2);
+                        } else {
+                                stack_push(op1 / op2);
+                        }
+                } else {
+                        break;
+                }
+        }
+}
+
+void parse_A()
+{
+        parse_B();
+
+        while (token.kind) {
+                if (match_token('+') || match_token('-')) {
+                        token_t operator = token_prev;
+
+                        parse_B();
+                                int op1 = stack_pop();
+                                int op2 = stack_pop();
+
+                                if (operator.kind == '+') {
+                                        stack_push(op1 + op2);
+                                } else
+                                        stack_push(op2 - op1);
+                } else {
+                        break;
+                }
+        }
+}
+
+void parse_tokens()
+{
+        parse_A();
+
+        int val = stack_pop();
+
+        printf("%d", val);
+}
+
+void parse_test()
+{
+        char *prog = "1-(-(-(-(1-2))))";
+        stream = prog;
+        next_token();
+        parse_tokens();
+}
+
 int main()
 {
         buf_test();
         lex_test();
         str_intern_test();
+
+        parse_test();
 }
 
 
