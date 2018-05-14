@@ -30,7 +30,7 @@ struct bufHdr {
 #define buf_len(buf) ((buf) ? (buf__hdr(buf)->len) : 0)
 #define buf_cap(buf) ((buf) ? buf__hdr(buf)->cap : 0)
 #define buf_free(buf) (buf) ? (free(buf__hdr(buf)), (buf) = NULL) : (void)0
-#define buf_pop(buf) ((buf) ? (buf__hdr(buf)->len--, (buf[buf_len(buf)])) : 0)
+#define buf_pop(buf) ((buf) ? (buf__hdr(buf)->len--, (buf[buf_len(buf)])) : buf[0])
 
 void *xmalloc(size_t num_bytes)
 {
@@ -307,16 +307,36 @@ void str_intern_test()
 
 // 2+3  -> (+ 2 3)
 // 2*3  -> (* 2 3)
-int *stack;
 
-void stack_push(int a)
+typedef enum {
+        UNARY,
+        BINARY
+}type;
+
+struct expr {
+        type exprType;
+
+        union {
+                int val;
+                struct {
+                        struct expr *expr1;
+                        struct expr *expr2;
+                        int op;
+                } comb;
+        };
+};
+
+struct expr *stack;
+struct expr exprs;
+
+void stack_push(struct expr a)
 {
         buf_push(stack, a);
 }
 
-int stack_pop()
+struct expr stack_pop()
 {
-        int ret = buf_pop(stack);
+        struct expr ret = buf_pop(stack);
         return ret;
 }
 
@@ -335,7 +355,10 @@ void parse_A();
 void parse_D()
 {
         if (match_token(TOKEN_INT)) {
-                stack_push(token_prev.val);
+                struct expr e;
+                e.exprType = UNARY;
+                e.val = token_prev.val;
+                stack_push(e);
         } else {
                 match_token('(');
                 parse_A();
@@ -354,8 +377,15 @@ void parse_C()
         parse_D();
 
         if (unary) {
-                int a = stack_pop();
-                stack_push(-a);
+                struct expr e1 = stack_pop();
+                struct expr e2;
+
+                e2.exprType = BINARY;
+                e2.comb.op = 'u';
+                e2.comb.expr1 = malloc(sizeof(struct expr));
+                *e2.comb.expr1 = e1;
+
+                stack_push(e2);
         }
 }
 
@@ -367,13 +397,30 @@ void parse_B()
                 if (match_token('*') || match_token('/')) {
                         token_t operator = token_prev;
                         parse_C();
-                        int op1 = stack_pop();
-                        int op2 = stack_pop();
+                        struct expr op1 = stack_pop();
+                        struct expr op2 = stack_pop();
 
                         if (operator.kind == '*') {
-                                stack_push(op1 * op2);
+                                struct expr e;
+                                e.exprType = BINARY;
+                                e.comb.op = '*';
+                                e.comb.expr1 = malloc(sizeof(struct expr));
+                                e.comb.expr2 = malloc(sizeof(struct expr));
+
+                                *e.comb.expr1 = op1;
+                                *e.comb.expr2 = op2;
+                                stack_push(e);
                         } else {
-                                stack_push(op1 / op2);
+                                struct expr e;
+
+                                e.exprType = BINARY;
+                                e.comb.op = '/';
+                                e.comb.expr1 = malloc(sizeof(struct expr));
+                                e.comb.expr2 = malloc(sizeof(struct expr));
+
+                                *e.comb.expr1 = op1;
+                                *e.comb.expr2 = op2;
+                                stack_push(e);
                         }
                 } else {
                         break;
@@ -390,13 +437,32 @@ void parse_A()
                         token_t operator = token_prev;
 
                         parse_B();
-                                int op1 = stack_pop();
-                                int op2 = stack_pop();
+                        struct expr op1 = stack_pop();
+                        struct expr op2 = stack_pop();
 
-                                if (operator.kind == '+') {
-                                        stack_push(op1 + op2);
-                                } else
-                                        stack_push(op2 - op1);
+                        if (operator.kind == '+') {
+                                struct expr e;
+
+                                e.exprType = BINARY;
+                                e.comb.op = '+';
+                                e.comb.expr1 = malloc(sizeof(struct expr));
+                                e.comb.expr2 = malloc(sizeof(struct expr));
+
+                                *e.comb.expr1 = op2;
+                                *e.comb.expr2 = op1;
+                                stack_push(e);
+                        } else {
+                                struct expr e;
+
+                                e.exprType = BINARY;
+                                e.comb.op = '-';
+                                e.comb.expr1 = malloc(sizeof(struct expr));
+                                e.comb.expr2 = malloc(sizeof(struct expr));
+
+                                *e.comb.expr1 = op2;
+                                *e.comb.expr2 = op1;
+                                stack_push(e);
+                        }
                 } else {
                         break;
                 }
@@ -406,18 +472,36 @@ void parse_A()
 void parse_tokens()
 {
         parse_A();
+}
 
-        int val = stack_pop();
-
-        printf("%d", val);
+void print_s_exp(struct expr e)
+{
+        switch (e.exprType) {
+        case UNARY:
+                printf(" %d ", e.val);
+                return;
+        case BINARY:
+                if (e.comb.op == 'u') {
+                        printf("(-");
+                        print_s_exp(*e.comb.expr1);
+                        printf(")");
+                } else {
+                        printf("(%c ", e.comb.op);
+                        print_s_exp(*e.comb.expr1);
+                        print_s_exp(*e.comb.expr2);
+                        printf(")");
+                }
+        }
 }
 
 void parse_test()
 {
-        char *prog = "1-(-(-(-(1-2))))";
+        char *prog = "12*34+45/56+-23";
         stream = prog;
         next_token();
         parse_tokens();
+
+        print_s_exp(stack_pop());
 }
 
 int main()
@@ -427,6 +511,12 @@ int main()
         str_intern_test();
 
         parse_test();
+
+        //(+ (+ (*  34  12 )(/  56  45 ))(- 23 ))
+                        
+
+        
+
 }
 
 
