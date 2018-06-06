@@ -30,7 +30,6 @@ struct bufHdr {
 #define buf_len(buf) ((buf) ? (buf__hdr(buf)->len) : 0)
 #define buf_cap(buf) ((buf) ? buf__hdr(buf)->cap : 0)
 #define buf_free(buf) (buf) ? (free(buf__hdr(buf)), (buf) = NULL) : (void)0
-#define buf_pop(buf) ((buf) ? (buf__hdr(buf)->len--, (buf[buf_len(buf)])) : buf[0])
 
 void *xmalloc(size_t num_bytes)
 {
@@ -96,156 +95,6 @@ void buf_test()
         printf("buf test passed\n");
 }
 
-typedef enum {
-        TOKEN_INT = 128,
-        TOKEN_IDENT,
-        TOKEN_KEYWORD
-} tokenKind;
-
-typedef struct {
-        tokenKind kind;
-
-        union {
-                uint64_t val;
-                struct {
-                        const char *start, *end;
-                };
-        };
-        
-} token_t;
-
-token_t token_prev;
-token_t token;
-char *stream;
-
-void next_token()
-{
-        token_prev = token;
-
-        switch (*stream) {
-        case '0':
-        case '1':
-        case '2':
-        case '3':
-        case '4':
-        case '5':
-        case '6':
-        case '7':
-        case '8':
-        case '9':
-        {
-                uint64_t val = 0;
-                while (*stream && isdigit(*stream)) {
-                        val = val * 10 + *stream - '0';
-                        stream++;
-                }
-                token.kind = TOKEN_INT;
-                token.val = val;
-                break;
-        }
-        case 'a':
-        case 'b':
-        case 'c':
-        case 'd':
-        case 'e':
-        case 'f':
-        case 'g':
-        case 'h':
-        case 'i':
-        case 'j':
-        case 'k':
-        case 'l':
-        case 'm':
-        case 'n':
-        case 'o':
-        case 'p':
-        case 'q':
-        case 'r':
-        case 's':
-        case 't':
-        case 'u':
-        case 'v':
-        case 'w':
-        case 'x':
-        case 'y':
-        case 'z':
-        case 'A':
-        case 'B':
-        case 'C':
-        case 'D':
-        case 'E':
-        case 'F':
-        case 'G':
-        case 'H':
-        case 'I':
-        case 'J':
-        case 'K':
-        case 'L':
-        case 'M':
-        case 'N':
-        case 'O':
-        case 'P':
-        case 'Q':
-        case 'R':
-        case 'S':
-        case 'T':
-        case 'U':
-        case 'V':
-        case 'W':
-        case 'X':
-        case 'Y':
-        case 'Z':
-        case '_':
-        {
-                const char *start = stream++;
-                const char *end = NULL;
-                
-                while (isalnum(*stream) || *stream == '_') {
-                        stream++;
-                }
-                
-                end = stream - 1;
-                
-                token.kind = TOKEN_IDENT;
-                token.start = start;
-                token.end = end;
-                break;
-        }
-        default:
-                token.kind = *stream++;
-        }
-}
-
-void print_token()
-{
-        switch (token.kind) {
-        case TOKEN_INT:
-                printf("%d\n", token.val);
-                break;
-                
-        case TOKEN_IDENT:
-                printf("%.*s\n", (token.end - token.start + 1), token.start);
-                break;
-
-        default:
-                printf("token kind = %c\n", token.kind);
-        } 
-}
-
-void lex_test()
-{
-        char *prog = "+ 123,HELLO(), abc32343 84384384";
-        token_t *token_arr = NULL;
-        
-        stream = prog;
-        next_token();
-        
-        while (token.kind) {
-                print_token();
-                next_token();
-                buf_push(token_arr, token);
-        }
-}
 
 struct internStr {
         size_t len;
@@ -279,12 +128,6 @@ const char *str_intern(const char *str)
         return str_intern_range(str, str + strlen(str));
 }
 
-void init_keywords()
-{
-        const char *if_k = str_intern("if");
-        const char *else_k = str_intern("else");
-}
-
 void str_intern_test()
 {
         char a[] = "hello";
@@ -296,6 +139,109 @@ void str_intern_test()
         assert(str_intern_range(&a[0], &a[strlen(a)-1]) != str_intern_range(&c[0], &b[strlen(c)-1]));
 
         printf("string intern test passed\n");
+}
+
+typedef enum TokenKind {
+        // Reserve the first 128 values for one-char tokens
+        TOKEN_INT = 128,
+        TOKEN_IDENT,
+        TOKEN_KEYWORD
+} tokenKind;
+
+typedef struct {
+        tokenKind kind;
+
+        union {
+                uint64_t val;
+                struct {
+                        const char *start, *end;
+                };
+        };
+
+} token_t;
+
+token_t token_prev;
+token_t token;
+char *stream;
+
+void next_token()
+{
+        token_prev = token;
+
+        switch (*stream) {
+        case '0': case '1': case '2': case '3': case '4': case '5': case '6': case '7': case '8': case '9':
+        {
+                uint64_t val = 0;
+                while (*stream && isdigit(*stream)) {
+                        val = val * 10 + *stream - '0';
+                        stream++;
+                }
+                token.kind = TOKEN_INT;
+                token.val = val;
+                break;
+        }
+        case 'a': case 'b': case 'c': case 'd': case 'e': case 'f': case 'g': case 'h': case 'i': case 'j':
+        case 'k': case 'l': case 'm': case 'n': case 'o': case 'p': case 'q': case 'r': case 's': case 't':
+        case 'u': case 'v': case 'w': case 'x': case 'y': case 'z': case 'A': case 'B': case 'C': case 'D':
+        case 'E': case 'F': case 'G': case 'H': case 'I': case 'J': case 'K': case 'L': case 'M': case 'N':
+        case 'O': case 'P': case 'Q': case 'R': case 'S': case 'T': case 'U': case 'V': case 'W': case 'X':
+        case 'Y': case 'Z':
+        case '_':
+        {
+                const char *start = stream++;
+                const char *end = NULL;
+
+                while (isalnum(*stream) || *stream == '_') {
+                        stream++;
+                }
+
+                end = stream - 1;
+
+                token.kind = TOKEN_IDENT;
+                token.start = start;
+                token.end = end;
+                break;
+        }
+        default:
+                token.kind = *stream++;
+        }
+}
+
+void print_token()
+{
+        switch (token.kind) {
+        case TOKEN_INT:
+                printf("%d\n", token.val);
+                break;
+
+        case TOKEN_IDENT:
+                printf("%.*s\n", (token.end - token.start + 1), token.start);
+                break;
+
+        default:
+                printf("token kind = %c\n", token.kind);
+        }
+}
+
+void lex_test()
+{
+        char *prog = "+ 123,HELLO(), abc32343 84384384";
+        token_t *token_arr = NULL;
+
+        stream = prog;
+        next_token();
+
+        while (token.kind) {
+                print_token();
+                next_token();
+                buf_push(token_arr, token);
+        }
+}
+
+void init_keywords()
+{
+        const char *if_k = str_intern("if");
+        const char *else_k = str_intern("else");
 }
 
 /*******************/
@@ -313,7 +259,8 @@ typedef enum {
         BINARY
 }type;
 
-struct expr {
+
+/*struct expr {
         type exprType;
 
         union {
@@ -325,21 +272,7 @@ struct expr {
                 } comb;
         };
 };
-
-struct expr *stack;
-struct expr exprs;
-
-void stack_push(struct expr a)
-{
-        buf_push(stack, a);
-}
-
-struct expr stack_pop()
-{
-        struct expr ret = buf_pop(stack);
-        return ret;
-}
-
+*/
 bool match_token(tokenKind kind)
 {
         if (token.kind == kind) {
@@ -350,158 +283,91 @@ bool match_token(tokenKind kind)
         return false;
 }
 
-void parse_A();
+int parse_A();
 
-void parse_D()
+int parse_D()
 {
+        int ret;
+
         if (match_token(TOKEN_INT)) {
-                struct expr e;
-                e.exprType = UNARY;
-                e.val = token_prev.val;
-                stack_push(e);
+                ret = token_prev.val;
         } else {
                 match_token('(');
-                parse_A();
+                ret = parse_A();
                 match_token(')');
         }
+
+        return ret;
 }
 
-void parse_C()
+int parse_C()
 {
-        bool unary = false;
-
         if (match_token('-')) {
-                unary = true;
-        }
-
-        parse_D();
-
-        if (unary) {
-                struct expr e1 = stack_pop();
-                struct expr e2;
-
-                e2.exprType = BINARY;
-                e2.comb.op = 'u';
-                e2.comb.expr1 = malloc(sizeof(struct expr));
-                *e2.comb.expr1 = e1;
-
-                stack_push(e2);
-        }
+                return -parse_D();
+        } else
+                return parse_D();
 }
 
-void parse_B()
+int parse_B()
 {
-        parse_C();
+        int op1, op2;
+
+        op1 = parse_C();
 
         while (token.kind) {
                 if (match_token('*') || match_token('/')) {
                         token_t operator = token_prev;
-                        parse_C();
-                        struct expr op1 = stack_pop();
-                        struct expr op2 = stack_pop();
+                        op2 = parse_C();
 
                         if (operator.kind == '*') {
-                                struct expr e;
-                                e.exprType = BINARY;
-                                e.comb.op = '*';
-                                e.comb.expr1 = malloc(sizeof(struct expr));
-                                e.comb.expr2 = malloc(sizeof(struct expr));
-
-                                *e.comb.expr1 = op1;
-                                *e.comb.expr2 = op2;
-                                stack_push(e);
+                                op1 *= op2;
                         } else {
-                                struct expr e;
-
-                                e.exprType = BINARY;
-                                e.comb.op = '/';
-                                e.comb.expr1 = malloc(sizeof(struct expr));
-                                e.comb.expr2 = malloc(sizeof(struct expr));
-
-                                *e.comb.expr1 = op1;
-                                *e.comb.expr2 = op2;
-                                stack_push(e);
+                                op1 /= op2;
                         }
                 } else {
                         break;
                 }
         }
+
+        return op1;
 }
 
-void parse_A()
+int parse_A()
 {
-        parse_B();
+        int op1, op2;
+
+        op1 = parse_B();
 
         while (token.kind) {
                 if (match_token('+') || match_token('-')) {
                         token_t operator = token_prev;
 
-                        parse_B();
-                        struct expr op1 = stack_pop();
-                        struct expr op2 = stack_pop();
+                        op2 = parse_B();
 
                         if (operator.kind == '+') {
-                                struct expr e;
-
-                                e.exprType = BINARY;
-                                e.comb.op = '+';
-                                e.comb.expr1 = malloc(sizeof(struct expr));
-                                e.comb.expr2 = malloc(sizeof(struct expr));
-
-                                *e.comb.expr1 = op2;
-                                *e.comb.expr2 = op1;
-                                stack_push(e);
+                                op1 += op2;
                         } else {
-                                struct expr e;
-
-                                e.exprType = BINARY;
-                                e.comb.op = '-';
-                                e.comb.expr1 = malloc(sizeof(struct expr));
-                                e.comb.expr2 = malloc(sizeof(struct expr));
-
-                                *e.comb.expr1 = op2;
-                                *e.comb.expr2 = op1;
-                                stack_push(e);
+                                op1 -= op2;
                         }
                 } else {
                         break;
                 }
         }
+
+        return op1;
 }
 
-void parse_tokens()
+int parse_tokens()
 {
-        parse_A();
-}
-
-void print_s_exp(struct expr e)
-{
-        switch (e.exprType) {
-        case UNARY:
-                printf(" %d ", e.val);
-                return;
-        case BINARY:
-                if (e.comb.op == 'u') {
-                        printf("(-");
-                        print_s_exp(*e.comb.expr1);
-                        printf(")");
-                } else {
-                        printf("(%c ", e.comb.op);
-                        print_s_exp(*e.comb.expr1);
-                        print_s_exp(*e.comb.expr2);
-                        printf(")");
-                }
-        }
+        return parse_A();
 }
 
 void parse_test()
 {
-        char *prog = "12*34+45/56+-23";
+        char *prog = "5-2-(2-1)";
         stream = prog;
         next_token();
-        parse_tokens();
-
-        print_s_exp(stack_pop());
+        printf ("%d\n", parse_tokens());
 }
 
 int main()
@@ -513,9 +379,9 @@ int main()
         parse_test();
 
         //(+ (+ (*  34  12 )(/  56  45 ))(- 23 ))
-                        
 
-        
+
+
 
 }
 
