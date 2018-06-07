@@ -7,6 +7,10 @@
 #include <stdint.h>
 #include <string.h>
 #include <stdbool.h>
+#include <stdarg.h>
+#include <limits.h>
+
+
 // stretchy buffers
 
 //buf_push
@@ -15,8 +19,8 @@
 //buf_free
 
 struct bufHdr {
-        int len;
-        int cap;
+        size_t len;
+        size_t cap;
         char buf_[0];
 };
 
@@ -150,12 +154,11 @@ typedef enum TokenKind {
 
 typedef struct {
         tokenKind kind;
-
+        const char *start;
+        const char *end;
         union {
                 uint64_t val;
-                struct {
-                        const char *start, *end;
-                };
+                const char *name;
         };
 
 } token_t;
@@ -164,6 +167,86 @@ token_t token_prev;
 token_t token;
 char *stream;
 
+void fatal(const char *fmt, ...) {
+        va_list args;
+        va_start(args, fmt);
+        printf("FATAL: ");
+        vprintf(fmt, args);
+        printf("\n");
+        va_end(args);
+}
+
+void syntax_error(const char *fmt, ...) {
+        va_list args;
+
+        va_start(args, fmt);
+        printf("Syntax Error: ");
+        vprintf(fmt, args);
+        printf("\n");
+        va_end(args);
+}
+
+static int convert_hex(char c)
+{
+#define hex_to_num(a, b) case a : return b
+        switch (c) {
+                hex_to_num('0', 0);
+                hex_to_num('1', 1);
+                hex_to_num('2', 2);
+                hex_to_num('3', 3);
+                hex_to_num('4', 4);
+                hex_to_num('5', 5);
+                hex_to_num('6', 6);
+                hex_to_num('7', 7);
+                hex_to_num('8', 8);
+                hex_to_num('9', 9);
+                hex_to_num('a', 10);
+                hex_to_num('b', 11);
+                hex_to_num('c', 12);
+                hex_to_num('d', 13);
+                hex_to_num('e', 14);
+                hex_to_num('f', 15);
+        default: 
+                return -1;
+        }
+}
+
+uint64_t scan_uint64()
+{
+        int base, digit;
+        uint64_t val = 0;
+
+        switch (*stream) {
+        case '0':
+                base = 8;
+                stream++;
+
+                if (*stream == 'x') {
+                        base = 16;
+                        stream++;
+                }
+                break;
+        default:
+                base = 10;
+        }
+
+        while (*stream && (digit = convert_hex(*stream)) != -1) {
+                //               int digit = *stream - '0';
+                if (val > (uint64_t)(UINT64_MAX - digit) / 10) {
+                        syntax_error("Interger literal overflow");
+
+                        while (isdigit(*stream)) {
+                                stream++;
+                        }
+                        val = 0;
+                }
+                val = val * base + digit;
+                stream++;
+        }
+
+        return val;
+}
+
 void next_token()
 {
         token_prev = token;
@@ -171,13 +254,8 @@ void next_token()
         switch (*stream) {
         case '0': case '1': case '2': case '3': case '4': case '5': case '6': case '7': case '8': case '9':
         {
-                uint64_t val = 0;
-                while (*stream && isdigit(*stream)) {
-                        val = val * 10 + *stream - '0';
-                        stream++;
-                }
                 token.kind = TOKEN_INT;
-                token.val = val;
+                token.val = scan_uint64();
                 break;
         }
         case 'a': case 'b': case 'c': case 'd': case 'e': case 'f': case 'g': case 'h': case 'i': case 'j':
@@ -211,11 +289,11 @@ void print_token()
 {
         switch (token.kind) {
         case TOKEN_INT:
-                printf("%d\n", token.val);
+                printf("%lu\n", token.val);
                 break;
 
         case TOKEN_IDENT:
-                printf("%.*s\n", (token.end - token.start + 1), token.start);
+                printf("%.*s\n", (int)(token.end - token.start + 1), token.start);
                 break;
 
         default:
@@ -225,7 +303,7 @@ void print_token()
 
 void lex_test()
 {
-        char *prog = "+ 123,HELLO(), abc32343 84384384";
+        char *prog = "+ 123,HELLO(), abc32343 84384384 0111 0xffffffffffffffff";
         token_t *token_arr = NULL;
 
         stream = prog;
@@ -238,41 +316,14 @@ void lex_test()
         }
 }
 
-void init_keywords()
-{
-        const char *if_k = str_intern("if");
-        const char *else_k = str_intern("else");
-}
+/****************************************************/
+/* void init_keywords()                             */
+/* {                                                */
+/*         const char *if_k = str_intern("if");     */
+/*         const char *else_k = str_intern("else"); */
+/* }                                                */
+/****************************************************/
 
-/*******************/
-/* D -> num | (A)  */
-/* C -> D | -D     */
-/* B -> C (*\/ C)* */
-/* A -> B (+/- B)* */
-/*******************/
-
-// 2+3  -> (+ 2 3)
-// 2*3  -> (* 2 3)
-
-typedef enum {
-        UNARY,
-        BINARY
-}type;
-
-
-/*struct expr {
-        type exprType;
-
-        union {
-                int val;
-                struct {
-                        struct expr *expr1;
-                        struct expr *expr2;
-                        int op;
-                } comb;
-        };
-};
-*/
 bool match_token(tokenKind kind)
 {
         if (token.kind == kind) {
@@ -283,106 +334,11 @@ bool match_token(tokenKind kind)
         return false;
 }
 
-int parse_A();
-
-int parse_D()
-{
-        int ret;
-
-        if (match_token(TOKEN_INT)) {
-                ret = token_prev.val;
-        } else {
-                match_token('(');
-                ret = parse_A();
-                match_token(')');
-        }
-
-        return ret;
-}
-
-int parse_C()
-{
-        if (match_token('-')) {
-                return -parse_D();
-        } else
-                return parse_D();
-}
-
-int parse_B()
-{
-        int op1, op2;
-
-        op1 = parse_C();
-
-        while (token.kind) {
-                if (match_token('*') || match_token('/')) {
-                        token_t operator = token_prev;
-                        op2 = parse_C();
-
-                        if (operator.kind == '*') {
-                                op1 *= op2;
-                        } else {
-                                op1 /= op2;
-                        }
-                } else {
-                        break;
-                }
-        }
-
-        return op1;
-}
-
-int parse_A()
-{
-        int op1, op2;
-
-        op1 = parse_B();
-
-        while (token.kind) {
-                if (match_token('+') || match_token('-')) {
-                        token_t operator = token_prev;
-
-                        op2 = parse_B();
-
-                        if (operator.kind == '+') {
-                                op1 += op2;
-                        } else {
-                                op1 -= op2;
-                        }
-                } else {
-                        break;
-                }
-        }
-
-        return op1;
-}
-
-int parse_tokens()
-{
-        return parse_A();
-}
-
-void parse_test()
-{
-        char *prog = "5-2-(2-1)";
-        stream = prog;
-        next_token();
-        printf ("%d\n", parse_tokens());
-}
-
 int main()
 {
         buf_test();
         lex_test();
         str_intern_test();
-
-        parse_test();
-
-        //(+ (+ (*  34  12 )(/  56  45 ))(- 23 ))
-
-
-
-
 }
 
 
