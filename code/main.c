@@ -206,6 +206,12 @@ static int convert_hex(char c)
                 hex_to_num('d', 13);
                 hex_to_num('e', 14);
                 hex_to_num('f', 15);
+                hex_to_num('A', 10);
+                hex_to_num('B', 11);
+                hex_to_num('C', 12);
+                hex_to_num('D', 13);
+                hex_to_num('E', 14);
+                hex_to_num('F', 15);
         default: 
                 return -1;
         }
@@ -224,6 +230,8 @@ uint64_t scan_uint64()
                 if (*stream == 'x') {
                         base = 16;
                         stream++;
+                } else if (!isdigit(*stream)) {
+                        syntax_error("unrecognized char %c in integer literal", *stream);
                 }
                 break;
         default:
@@ -252,6 +260,11 @@ void next_token()
         token_prev = token;
 
         switch (*stream) {
+        case ' ' : case '\n' : case '\r' : case '\t' : case '\v':
+                while (isspace(*stream)) {
+                        stream++;
+                }
+                break;
         case '0': case '1': case '2': case '3': case '4': case '5': case '6': case '7': case '8': case '9':
         {
                 token.kind = TOKEN_INT;
@@ -303,7 +316,7 @@ void print_token()
 
 void lex_test()
 {
-        char *prog = "+ 123,HELLO(), abc32343 84384384 0111 0xffffffffffffffff";
+        char *prog = "+ 123,HELLO(), abc32343 84384384 0111 0xffffffffffffffff 0ff";
         token_t *token_arr = NULL;
 
         stream = prog;
