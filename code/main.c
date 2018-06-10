@@ -9,7 +9,7 @@
 #include <stdbool.h>
 #include <stdarg.h>
 #include <limits.h>
-
+#include <math.h>
 
 // stretchy buffers
 
@@ -148,22 +148,29 @@ void str_intern_test()
 typedef enum TokenKind {
         // Reserve the first 128 values for one-char tokens
         TOKEN_INT = 128,
+        TOKEN_FLOAT,
         TOKEN_IDENT,
         TOKEN_KEYWORD
 } tokenKind;
 
+typedef enum TokenMod {
+        TOKENMOD_NONE,
+        TOKENMOD_CHAR
+} tokenMod;
+
 typedef struct {
         tokenKind kind;
+        tokenMod mod;
         const char *start;
         const char *end;
         union {
-                uint64_t val;
+                uint64_t int_val;
+                double float_val;
                 const char *name;
         };
 
 } token_t;
 
-token_t token_prev;
 token_t token;
 char *stream;
 
@@ -217,7 +224,87 @@ static int convert_hex(char c)
         }
 }
 
-uint64_t scan_uint64()
+char escape_to_char[256] = {
+        ['r'] = '\r',
+        ['n'] = '\n',
+        ['t'] = '\t',
+        ['v'] = '\v',
+        ['b'] = '\b',
+        ['a'] = '\a',
+        ['0'] = '\0',
+};
+
+void scan_char()
+{
+        char val;
+        assert(*stream == '\'');
+        stream++;
+
+        if (*stream == '\'') {
+                syntax_error("char literal can not be empty");
+        }
+
+        if (*stream == '\n') {
+                syntax_error("can not have new line in a char literal");
+        }
+
+        if (*stream == '\\') {
+                stream++;
+                val = escape_to_char[(int)*stream];
+                if (val == 0 && *stream != '0') {
+                        syntax_error("Invalid char literal escape '\\%c'", *stream);
+                }
+        } else {
+                val = *stream;
+        }
+
+        stream++;
+        
+        if (*stream != '\'') {
+                syntax_error("Expected literal ' but instead got '%c'", *stream);
+        } else {
+                stream++;
+        }
+
+        token.kind = TOKEN_INT;
+        token.mod= TOKENMOD_CHAR;
+        token.int_val = val;
+}
+
+void scan_float()
+{
+        double val;
+        char *digit_stream = stream;
+        bool parse_done = false;
+top:
+        switch (*stream) {
+        case '0' : case '1' : case '2' : case '3' : case '4' : case '5' : case '6' : case '7' : case '8' : case '9' :
+        {
+                if (isdigit(*stream)) stream++;
+                break;
+        }
+        case 'e' : case 'E' : case '.' : case '+' : case '-':
+        {
+                stream++;
+                break;
+        }
+
+        default:
+                parse_done = true;
+        }
+
+        if (!parse_done) goto top;
+
+        val = strtod(digit_stream, NULL);
+        if (val == HUGE_VAL || val == -HUGE_VAL) {
+                syntax_error("float literal overflow");
+        }
+
+        token.kind = TOKEN_FLOAT;
+        token.float_val = val;
+}
+
+void scan_int()
 {
         int base, digit;
         uint64_t val = 0;
@@ -240,7 +327,7 @@ uint64_t scan_uint64()
 
         while (*stream && (digit = convert_hex(*stream)) != -1) {
                 //               int digit = *stream - '0';
-                if (val > (uint64_t)(UINT64_MAX - digit) / 10) {
+                if (val > (uint64_t)(UINT64_MAX - digit) / base) {
                         syntax_error("Interger literal overflow");
 
                         while (isdigit(*stream)) {
@@ -252,23 +339,75 @@ uint64_t scan_uint64()
                 stream++;
         }
 
-        return val;
+        token.kind = TOKEN_INT;
+        token.int_val = val;
 }
 
-void next_token()
+void scan_str()
 {
-        token_prev = token;
+        assert(*stream == '"');
+        stream++;
+
+        char *str = NULL;
+        char val;
+
+        while (*stream && *stream != '"') {
+                val = *stream;
+
+                if (*stream == '\n') {
+                        syntax_error("String literals can not contain new line characters");
+                }
+
+                if (*stream == '\\') {
+                        stream++;
+                        if (*stream == '"') {
+                                val = *stream;
+                        } else {
+                                val = escape_to_char[(int)*stream];
+                                if (val == 0 && *stream != '0') {
+                                        syntax_error("invalid string literal escape '\\%c'", *stream);
+                                }
+                        }
+                }
+
+                buf_push(str, val);
+                stream++;
+        }
+}
+
+void next_token() 
+{
+top:
+        token.start = stream;
+        token.mod = TOKENMOD_NONE;
 
         switch (*stream) {
         case ' ' : case '\n' : case '\r' : case '\t' : case '\v':
                 while (isspace(*stream)) {
                         stream++;
                 }
+                goto top;
+                break;
+        case '\'':
+                scan_char();
+                break;
+        case '"':
+                scan_str();
+                break;
+        case '.':
+                scan_float();
                 break;
         case '0': case '1': case '2': case '3': case '4': case '5': case '6': case '7': case '8': case '9':
         {
-                token.kind = TOKEN_INT;
-                token.val = scan_uint64();
+                char *digit_stream = stream;
+
+                while(isdigit(*digit_stream)) {digit_stream++;}
+                if (*digit_stream == '.' ||
+                    tolower(*digit_stream) == 'e') {
+                        scan_float();
+                } else {
+                        scan_int();
+                }
                 break;
         }
         case 'a': case 'b': case 'c': case 'd': case 'e': case 'f': case 'g': case 'h': case 'i': case 'j':
@@ -296,15 +435,19 @@ void next_token()
         default:
                 token.kind = *stream++;
         }
+
+        token.end = stream - 1;
 }
 
 void print_token()
 {
         switch (token.kind) {
         case TOKEN_INT:
-                printf("%lu\n", token.val);
+                printf("%lu\n", token.int_val);
                 break;
-
+        case TOKEN_FLOAT:
+                printf("%f\n", token.float_val);
+                break;
         case TOKEN_IDENT:
                 printf("%.*s\n", (int)(token.end - token.start + 1), token.start);
                 break;
@@ -316,7 +459,7 @@ void print_token()
 
 void lex_test()
 {
-        char *prog = "+ 123,HELLO(), abc32343 84384384 0111 0xffffffffffffffff 0ff";
+        char *prog = "+ 123,HELLO(), abc32343 84384384 0111 0xffffffffffffffff 0xa 1.4 1.4e10 1e10 4 0x5 1e10";
         token_t *token_arr = NULL;
 
         stream = prog;
