@@ -99,7 +99,6 @@ void buf_test()
         printf("buf test passed\n");
 }
 
-
 struct internStr {
         size_t len;
         char *str;
@@ -109,7 +108,7 @@ struct internStr *interns = NULL;
 
 const char *str_intern_range(const char *start, const char *end)
 {
-        size_t len = end - start;
+        size_t len = end - start + 1;
         size_t i;
 
         for (i = 0; i < buf_len(interns); i++) {
@@ -118,7 +117,7 @@ const char *str_intern_range(const char *start, const char *end)
                 }
         }
 
-        char *strp = xmalloc(len + 1);
+        char *strp = xmalloc(len);
         strncpy(strp, start, len);
         strp[len] = '\0';
 
@@ -129,7 +128,7 @@ const char *str_intern_range(const char *start, const char *end)
 
 const char *str_intern(const char *str)
 {
-        return str_intern_range(str, str + strlen(str));
+        return str_intern_range(str, str + strlen(str) - 1);
 }
 
 void str_intern_test()
@@ -141,7 +140,7 @@ void str_intern_test()
         assert(a != b);
         assert(str_intern(&a[0]) == str_intern(&b[0]));
         assert(str_intern_range(&a[0], &a[strlen(a)-1]) != str_intern_range(&c[0], &b[strlen(c)-1]));
-
+        assert(str_intern(&a[0]) == str_intern_range(&a[0], &a[4]));
         printf("string intern test passed\n");
 }
 
@@ -150,6 +149,7 @@ typedef enum TokenKind {
         TOKEN_INT = 128,
         TOKEN_FLOAT,
         TOKEN_IDENT,
+        TOKEN_STR,
         TOKEN_KEYWORD
 } tokenKind;
 
@@ -167,8 +167,8 @@ typedef struct {
                 uint64_t int_val;
                 double float_val;
                 const char *name;
+                const char *str_val;
         };
-
 } token_t;
 
 token_t token;
@@ -373,6 +373,11 @@ void scan_str()
                 buf_push(str, val);
                 stream++;
         }
+
+        stream++;
+        buf_push(str, '\0');
+        token.kind = TOKEN_STR;
+        token.str_val = str;
 }
 
 void next_token() 
@@ -430,6 +435,8 @@ top:
                 token.kind = TOKEN_IDENT;
                 token.start = start;
                 token.end = end;
+
+                token.name = str_intern_range(start, end);
                 break;
         }
         default:
@@ -437,6 +444,16 @@ top:
         }
 
         token.end = stream - 1;
+}
+
+bool match_token(tokenKind kind)
+{
+        if (token.kind == kind) {
+                next_token();
+                return true;
+        }
+
+        return false;
 }
 
 void print_token()
@@ -457,20 +474,69 @@ void print_token()
         }
 }
 
-void lex_test()
+static void init_stream(const char *str)
 {
-        char *prog = "+ 123,HELLO(), abc32343 84384384 0111 0xffffffffffffffff 0xa 1.4 1.4e10 1e10 4 0x5 1e10";
-        token_t *token_arr = NULL;
-
-        stream = prog;
+        stream = (char *) str;
         next_token();
-
-        while (token.kind) {
-                print_token();
-                next_token();
-                buf_push(token_arr, token);
-        }
 }
+
+#define assert_token_int(val) assert(token.int_val == val && match_token(TOKEN_INT))
+#define assert_token_float(val) assert(token.float_val == val && match_token(TOKEN_FLOAT))
+#define assert_token_char(val) assert(token.int_val == val && token.mod == TOKENMOD_CHAR && match_token(TOKEN_INT))
+#define assert_token_str(val) assert(strcmp(token.str_val, val) == 0 && match_token(TOKEN_STR))
+#define assert_token_ident(val) assert(token.name == (val) && match_token(TOKEN_IDENT))
+#define assert_token_eof() assert(token.kind == '\0')
+
+static void lex_test()
+{
+//        init_stream("+ 123,HELLO(), abc32343 84384384 0111 0xffffffffffffffff 0xa 1.4 1.4e10 1e10 4 0x5 1e10");
+        // identifier test
+        init_stream("hello123");
+        assert_token_ident(str_intern("hello123"));
+        assert_token_eof();
+
+        // integer literal test
+        init_stream("123");
+        assert_token_int(123);
+
+        // floating point test
+        init_stream("0xff 1.2");
+        assert_token_int(255);
+        assert_token_float(1.2);
+        assert_token_eof();
+
+        // char literal test
+        init_stream("'\\n' 'a' " );
+        assert_token_int('\n');
+        assert_token_int('a');
+        assert_token_eof();
+
+        // string literal tests
+        init_stream("\"foo\" \"a\\n\"");
+
+        assert_token_str("foo");
+        assert_token_str("a\n");
+        assert_token_eof();
+
+        printf("lex test passed\n");
+}
+
+/*******************************************************************************************************************/
+/* void lex_test()                                                                                                 */
+/* {                                                                                                               */
+/*         char *prog = "+ 123,HELLO(), abc32343 84384384 0111 0xffffffffffffffff 0xa 1.4 1.4e10 1e10 4 0x5 1e10"; */
+/*         token_t *token_arr = NULL;                                                                              */
+/*                                                                                                                 */
+/*         stream = prog;                                                                                          */
+/*         next_token();                                                                                           */
+/*                                                                                                                 */
+/*         while (token.kind) {                                                                                    */
+/*                 print_token();                                                                                  */
+/*                 next_token();                                                                                   */
+/*                 buf_push(token_arr, token);                                                                     */
+/*         }                                                                                                       */
+/* }                                                                                                               */
+/*******************************************************************************************************************/
 
 /****************************************************/
 /* void init_keywords()                             */
@@ -480,21 +546,11 @@ void lex_test()
 /* }                                                */
 /****************************************************/
 
-bool match_token(tokenKind kind)
-{
-        if (token.kind == kind) {
-                next_token();
-                return true;
-        }
-
-        return false;
-}
-
 int main()
 {
         buf_test();
-        lex_test();
         str_intern_test();
+        lex_test();
 }
 
 
