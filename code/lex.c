@@ -1,11 +1,38 @@
+const char *keyword_if;
+const char *keyword_else;
+const char *keyword_return;
+const char *keyword_break;
+const char *keyword_continue;
+const char *keyword_for;
+const char *keyword_while;
+const char *keyword_do;
+const char *keyword_func;
+const char *keyword_var;
+const char *keyword_const;
+const char *keyword_enum;
+const char *keyword_struct;
+const char *keyword_union;
+const char *keyword_switch;
+const char *keyword_case;
+const char *keyword_default;
+const char *keyword_typedef;
+const char *keyword_sizeof;
 
 typedef enum TokenKind {
         TOKEN_EOF = 0,
+        TOKEN_RBRACE = '{',
+        TOKEN_LBRACE = '}',
+        TOKEN_LBRACKET = '[',
+        TOKEN_RBRACKET = ']',
+        TOKEN_LPAREN = '(',
+        TOKEN_RPAREN = ')',
+        TOKEN_COLON = ':',
         // Reserve the first 128 values for one-char tokens
         TOKEN_LAST_CHAR = 127,
         TOKEN_INT,
         TOKEN_FLOAT,
         TOKEN_NAME,
+        TOKEN_KEYWORD,
         TOKEN_STR,
         TOKEN_LSHIFT,
         TOKEN_RSHIFT,
@@ -259,6 +286,10 @@ void scan_str()
         token.str_val = str;
 }
 
+bool token_keyword()
+{
+}
+
 void next_token() 
 {
 top:
@@ -308,14 +339,16 @@ top:
                 while (isalnum(*stream) || *stream == '_') {
                         stream++;
                 }
-
                 end = stream - 1;
-
-                token.kind = TOKEN_NAME;
                 token.start = start;
                 token.end = end;
-
                 token.name = str_intern_range(start, end);
+                
+                if (token_keyword()) {
+                        token.kind = TOKEN_KEYWORD;
+                } else {
+                        token.kind = TOKEN_NAME;
+                }
                 break;
         }
 #define CASE1(c, a1, t1, a2, t2)                \
@@ -417,9 +450,37 @@ top:
         token.end = stream - 1;
 }
 
+bool is_token(tokenKind kind)
+{
+        if (token.kind == kind) {
+                return true;
+        }
+
+        return false;
+}
+
 bool match_token(tokenKind kind)
 {
         if (token.kind == kind) {
+                next_token();
+                return true;
+        }
+
+        return false;
+}
+
+void expect_token(tokenKind kind)
+{
+        if (token.kind == kind) {
+                next_token();
+                return;
+        }
+
+        syntax_error();
+}
+
+bool match_keyword(const char *keyword) {
+        if (token.kind == TOKEN_KEYWORD && token.name == keyword) {
                 next_token();
                 return true;
         }
@@ -458,6 +519,29 @@ static void init_stream(const char *str)
 #define assert_token_ident(val) assert(token.name == (val) && match_token(TOKEN_NAME))
 #define assert_token_eof() assert(token.kind == '\0')
 
+static void lex_init()
+{
+        keyword_if = str_intern("if");
+        keyword_else = str_intern("else");
+        keyword_return = str_intern("return");
+        keyword_break = str_intern("break");
+        keyword_continue = str_intern("continue");
+        keyword_for = str_intern("for");
+        keyword_while = str_intern("while");
+        keyword_do = str_intern("do");
+        keyword_func = str_intern("func");
+        keyword_var = str_intern("var");
+        keyword_const = str_intern("const");
+        keyword_enum = str_intern("enum");
+        keyword_struct = str_intern("struct");
+        keyword_union = str_intern("union");
+        keyword_switch = str_intern("switch");
+        keyword_case = str_intern("case");
+        keyword_default = str_intern("default");
+        keyword_typedef = str_intern("typedef");
+        sizeof_keyword = str_intern("sizeof");
+}
+        
 static void lex_test()
 {
 //        init_stream("+ 123,HELLO(), abc32343 84384384 0111 0xffffffffffffffff 0xa 1.4 1.4e10 1e10 4 0x5 1e10");
@@ -495,27 +579,3 @@ static void lex_test()
         printf("lex test passed\n");
 }
 
-/*******************************************************************************************************************/
-/* void lex_test()                                                                                                 */
-/* {                                                                                                               */
-/*         char *prog = "+ 123,HELLO(), abc32343 84384384 0111 0xffffffffffffffff 0xa 1.4 1.4e10 1e10 4 0x5 1e10"; */
-/*         token_t *token_arr = NULL;                                                                              */
-/*                                                                                                                 */
-/*         stream = prog;                                                                                          */
-/*         next_token();                                                                                           */
-/*                                                                                                                 */
-/*         while (token.kind) {                                                                                    */
-/*                 print_token();                                                                                  */
-/*                 next_token();                                                                                   */
-/*                 buf_push(token_arr, token);                                                                     */
-/*         }                                                                                                       */
-/* }                                                                                                               */
-/*******************************************************************************************************************/
-
-/****************************************************/
-/* void init_keywords()                             */
-/* {                                                */
-/*         const char *if_k = str_intern("if");     */
-/*         const char *else_k = str_intern("else"); */
-/* }                                                */
-/****************************************************/

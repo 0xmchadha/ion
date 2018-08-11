@@ -27,7 +27,9 @@ struct bufHdr {
 #define buf_len(buf) ((buf) ? (buf__hdr(buf)->len) : 0)
 #define buf_cap(buf) ((buf) ? buf__hdr(buf)->cap : 0)
 #define buf_free(buf) (buf) ? (free(buf__hdr(buf)), (buf) = NULL) : (void)0
+#define buf_sizeof(buf) (buf) ? (buf_len(buf)*sizeof(*buf)) : 0
 
+        
 void *xmalloc(size_t num_bytes)
 {
         void *ptr = malloc(num_bytes);
