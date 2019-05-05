@@ -59,7 +59,10 @@ typedef enum TokenKind {
 
 typedef enum TokenMod {
         TOKENMOD_NONE,
-        TOKENMOD_CHAR
+        TOKENMOD_CHAR,
+        TOKENMOD_HEX,
+        TOKENMOD_OCT,
+        TOKENMOD_BIN
 } tokenMod;
 
 typedef struct {
@@ -220,11 +223,14 @@ void scan_int()
                 if (*stream == 'x') {
                         base = 16;
                         stream++;
+                        token.mod = TOKENMOD_HEX;
                 } else if (tolower(*stream) == 'b') {
                         stream++;
                         base = 2;
+                        token.mod = TOKENMOD_BIN;
                 } else if (isdigit(*stream)) {
                         base = 8;
+                        token.mod = TOKENMOD_OCT;
                 }
                 break;
         default:
@@ -443,6 +449,15 @@ top:
                         stream++;
                 } 
                 break;
+        case '=':
+                token.kind = TOKEN_ASSIGN;
+
+                if (*stream == '=') {
+                        
+                }
+
+                break;
+                
         default:
                 token.kind = *stream++;
         }
@@ -556,6 +571,7 @@ static void lex_test()
 
         // floating point test
         init_stream("0xff 1.2");
+        assert(token.mod == TOKENMOD_HEX);
         assert_token_int(255);
         assert_token_float(1.2);
         assert_token_eof();

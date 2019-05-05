@@ -289,7 +289,7 @@ Stmt *stmt_return(Expr *expr)
         Stmt *s = stmt_new();
         s->ret.ret = expr;
         return s;
-}T
+}
 
 Stmt *stmt_ifstmt(Expr *condition, StmtBlock if_block, ElseIf *elseifs, size_t num_elseifs, StmtBlock else_block)
 {
@@ -312,7 +312,7 @@ Stmt *stmt_for(Stmt *init, Stmt *expr, Stmt *next, StmtBlock block)
         return s;
 }
 
-Stmt *stmt_while(StmtKind kind, Expr *expr, StmtBlock block)
+Stmt *stmt_while(Expr *expr, StmtBlock block)
 {
         Stmt *s = stmt_new();
         s->while_stmt.expr = expr;

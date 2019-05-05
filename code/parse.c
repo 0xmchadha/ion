@@ -1,4 +1,124 @@
+StmtBlock parse_stmtblock()
+{
+        StmtBlock block;
+        Stmt **stmts = NULL;
+        ElseIf *elseifs = NULL;
 
+        if (match_token(TOKEN_LBRACE)) {
+                while (!match_token(TOKEN_RBRACE)) {
+                        buf_push(stmts, parse_stmt());
+                }
+        } else {
+                buf_push(stmts, parse_stmt());
+        }
+        
+        return (StmtBlock){stmts, buf_len(stmts)};
+}
+
+Stmt *parse_simple_stmt()
+{
+        Expr *lvalue = parse_expr();
+        Expr *rvalue = NULL;
+        TokenKind kind;
+
+        return stmt_assign(STMT_ASSIGN, lvalue, rvalue, token)
+}
+
+Stmt *parse_for_stmt()
+{
+        Stmt *init = NULL;
+        Stmt *post = NULL;
+        Expr *cond = NULL;
+        StmtBlock for_block;
+
+        expect_token(TOKEN_LPAREN);
+        if (!match_token(TOKEN_SEMICOLON)) {
+                init = parse_simple_stmt();
+                expect_token(TOKEN_SEMICOLON);
+        }
+        
+        if (!match_token(TOKEN_SEMICOLON)) {
+                cond = parse_expr();
+                expect_token(TOKEN_SEMICOLON);
+        }
+
+        if (!match_token(TOKEN_SEMICOLON)) {
+                post = parse_simple_stmt();
+                expect_token(TOKEN_SEMICOLON);
+        }
+        
+        expect_token(TOKEN_RPAREN);
+        for_block = parse_stmtblock();
+        return stmt_for(init, cond, post, for_block);
+}
+
+Stmt *parse_while_stmt()
+{
+        Expr *cond = NULL;
+        StmtBlock while_block;
+
+        expect_token(TOKEN_LPAREN);
+        cond = parse_expr();
+        expect_token(TOKEN_RPAREN);
+        while_block = parse_stmtblock();
+
+        return stmt_while(cond, while_block);
+}
+
+Stmt *parse_if_stmt()
+{
+        Expr *cond = NULL;
+        StmtBlock then_block, else_block;
+        ElseIf *elseifs = NULL;
+        
+        expect_token(TOKEN_LPAREN);
+        cond = parse_expr();
+        expect_token(TOKEN_RPAREN);
+        then_block = parse_stmtblock();
+
+        while (match_token(keyword_else)) {
+                if (match_token(keyword_if)) {
+                        Expr *cond = parse_expr();
+                        StmtBlock elseblock = parse_stmtblock();
+                        buf_push(elseifs, ((ElseIf){cond, elseblock}));
+                } else {
+                        else_block = parse_stmtblock();
+                        break;
+                }
+        }
+
+        return stmt_ifstmt(cond, then_block, elseifs, buf_len(elseifs), else_block);
+}
+
+Stmt* parse_stmt()
+{
+        if (match_keyword(keyword_return)) {
+                Expr *e = NULL;
+                if (!match_token(TOKEN_SEMICOLON)) {
+                        e = parse_expr();
+                }
+                return stmt_return(e);
+        } else if (match_keyword(keyword_break)) {
+                return stmt_break();
+        } else if (match_keyword(keyword_continue)) {
+                return stmt_continue();
+        } else if (match_keyword(keyword_if)) {
+                return parse_if_stmt();
+        } else if (match_keyword(keyword_while)) {
+                return parse_while_stmt();
+        } else if (match_keyword(keyword_for)) {
+                return parse_for_stmt()
+        } else if (match_keyword(keyword_do)) {
+                
+        } else if (match_keyword(keyword_switch)) {
+                
+        } else if (match_token(TOKEN_LBRACE)) {
+                return stmt_block(parse_stmtblock());
+        }
+
+        parse_decl();
+        parse_expr();
+}
 
 Type *parse_type_func()
 {
@@ -36,12 +156,12 @@ Type *parse_type_pointer(Type *type)
 
 Type *parse_type_array(Type *type)
 {
+        Expr *expr = NULL;
         if (match_token(TOKEN_LBRACKET)) {
-
-                
+                expr = parse_expr();
                 expect_token(TOKEN_RBRACKET);
+                return type_array(expr, type);
         }
-
         return NULL;
 }
 
@@ -74,7 +194,6 @@ Type *parse_type()
                 if (array_type) {
                         type = array_type;
                 }
-
                 if (!pointer_type && !array_type) {
                         break;
                 }
@@ -220,7 +339,7 @@ Decl *parse_decl()
         if (!is_token(TOKEN_KEYWORD)) {
                 return NULL
         } else if (match_keyword(KEYWORD_ENUM)) {
-                return parse_enum();
+                return parse_decl_enum();
         } else if (match_keyword(KEYWORD_STRUCT)) {
                 return parse_decl_aggregate(DECL_STRUCT);
         } else if (match_keyword(KEYWORD_UNION)) {
