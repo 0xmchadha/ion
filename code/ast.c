@@ -1,3 +1,320 @@
+typedef enum DeclKind {
+        DECL_NONE,
+        DECL_ENUM,
+        DECL_STRUCT,
+        DECL_UNION,
+        DECL_VAR,
+        DECL_CONST,
+        DECL_FUNC,
+        DECL_TYPEDEF,
+} DeclKind;
+
+typedef enum AggregateKind {
+        AGGREGATE_NONE,
+        AGGREGATE_STRUCT,
+        AGGREGATE_UNION,
+} AggregateKind;
+
+typedef struct EnumItem {
+        const char *name;
+        Expr *expr;
+} EnumItem;
+
+typedef struct EnumDecl {
+        size_t num_enum_items;
+        EnumItem *items;
+} EnumDecl;
+
+typedef struct AggregateItem {
+        size_t num_items;
+        char **names;
+        Typespec *type;
+} AggregateItem;
+
+typedef struct AggregateDecl {
+        size_t num_items;
+        AggregateItem *items;
+} AggregateDecl;
+
+typedef struct FuncArg {
+        const char *name;
+        Typespec *type;
+} FuncArg;
+
+typedef struct FuncDecl {
+        size_t num_func_args;
+        FuncArg *args;
+        Typespec *type;
+        StmtBlock block;
+} FuncDecl;
+
+typedef struct TypedefDecl {
+        Typespec *type;
+} TypedefDecl;
+
+typedef struct VarDecl {
+        Typespec *type;
+        Expr *expr;
+} VarDecl;
+
+typedef struct ConstDecl {
+        Expr *expr;
+} ConstDecl;
+
+typedef struct Decl {
+        DeclKind kind;
+        const char *name;
+        union {
+                EnumDecl enum_decl;
+                AggregateDecl aggregate_decl;
+                FuncDecl func_decl;
+                TypedefDecl typedef_decl;
+                VarDecl var_decl;
+                ConstDecl const_decl;
+        };
+} Decl;
+
+Decl *new_decl(DeclKind kind, const char *name) {
+        Decl *decl = xmalloc(sizeof(Decl));
+        decl->name = name;
+        decl->kind = kind;
+        return decl;
+}
+
+Decl *new_decl_var(const char *name, Typespec *type, Expr *expr) {
+        Decl *decl = new_decl(DECL_VAR, name);
+        decl->var_decl.type = type;
+        decl->var_decl.expr = expr;
+        return decl;
+}
+
+Decl *new_decl_const(const char *name, Expr *expr) {
+        Decl *decl = new_decl(DECL_CONST, name);
+        decl->const_decl.expr = expr;
+        return decl;
+}
+
+Decl *new_decl_aggregate(AggregateKind kind, const char *name, size_t num_items, AggregateItem *items) {
+        Decl *decl = new_decl(kind, name);
+        decl->aggregate_decl.num_items = num_items;
+        decl->aggregate_decl.items = items;
+        return decl;
+}
+
+Decl *new_decl_func(const char *name, size_t num_func_args, FuncArg *args, StmtBlock block) {
+        Decl *decl = new_decl(DECL_FUNC, name);
+        decl->func_decl.num_func_args = num_func_args;
+        decl->func_decl.args = args;
+        decl->func_decl.block = block;
+}
+
+Decl *new_decl_typedef(const char *name, Typespec *type) {
+        Decl *decl = new_decl(DECL_TYPEDEF, name);
+        decl->typedef_decl.type = type;
+}
+
+typedef enum ExprKind {
+        EXPR_NONE,
+        EXPR_INT,
+        EXPR_FLOAT,
+        EXPR_STR,
+        EXPR_NAME,
+        EXPR_CAST,
+        EXPR_COMPOUND,
+        EXPR_FIELD,
+        EXPR_INDEX,
+        EXPR_CALL,
+        EXPR_UNARY,
+        EXPR_BINARY,
+        EXPR_TERNARY,
+} ExprKind;
+
+typedef struct Expr {
+        ExprKind kind;
+        union {
+                uint64_t int_val;
+                double float_val;
+                char *str_val;
+                char *name;
+                struct {
+                        Expr *expr;
+                        Expr *index
+                } index_expr;
+
+                struct {
+                        Expr *expr;
+                        char *name;
+                } field_expr;
+
+                struct {
+                        Expr *expr;
+                        Expr **args;
+                        size_t num_args;
+                } call_expr;
+
+                struct {
+                        Typespec *type;
+                        Expr **args;
+                        size_t num_args;
+                } compound_expr;
+
+                struct {
+                        Typespec *type;
+                        Expr *expr;
+                } cast_expr;
+                struct {
+                        tokenKind op;
+                        Expr *expr;
+                } unary_expr;
+               
+                struct  {
+                        Expr *left;
+                        tokenKind op;        
+                        Expr *right;
+                } binary_expr;
+
+                struct {
+                        Expr *eval;
+                        Expr *then_expr;
+                        Expr *else_expr;
+                } ternary_expr;
+        };
+} Expr;
+
+Expr *new_expr(ExprKind kind) {
+        Expr *expr = xmalloc(sizeof(struct Expr));
+        expr->kind = kind;
+        return expr;
+}
+
+Expr *new_expr_int(uint64_t int_val) {
+        Expr *expr = new_expr(EXPR_INT);
+        expr->int_val = int_val;
+        return expr;
+}
+
+Expr *new_expr_float(double float_val) {
+        Expr *expr = new_expr(EXPR_FLOAT);
+        expr->float_val = float_val;
+        return expr;
+}
+
+Expr *new_expr_str(char *str) {
+        Expr *expr = new_expr(EXPR_STR);
+        expr->str_val = str;
+        return expr;
+}
+
+Expr *new_expr_name(char *name) {
+        Expr *expr = new_expr(EXPR_NAME);
+        expr->name_val = name;
+        return expr;
+}
+
+Expr *new_expr_unary(tokenKind op, Expr *expr) {
+        Expr *expr = new_expr(EXPR_UNARY);
+        expr->unaryExpr.op = op;
+        expr->unaryExpr.expr = expr;
+        return expr;
+}
+
+Expr *new_expr_call(Expr *expr, Expr **args) {
+        Expr *expr = new_expr(EXPR_CALL);
+        expr->callExpr.expr = left;
+        expr->callExpr.args = args;
+        return expr;
+}
+
+Expr *new_expr_field(Expr *expr, const char *field) {
+        Expr *expr = new_expr(EXPR_FIELD);
+        expr->fieldExpr.expr = expr;
+        expr->fieldExpr.args = field;
+        return expr;
+}
+
+Expr *new_expr_index(Expr *expr, Expr *index) {
+        Expr *expr = new_expr(EXPR_INDEX);
+        expr->indexExpr.expr = expr;
+        expr->indexExpr.index = index;
+        return expr;
+}
+
+Expr *new_expr_binary(Expr *left, tokenKind op, Expr *right) {
+        Expr *expr = new_expr(EXPR_BINARY);
+        expr->binary_expr.left = left;
+        expr->binary_expr.right = right;
+        expr->binary_expr.op = 
+}
+
+Expr *new_expr_ternary(Expr *eval, Expr *then_expr, Expr *else_expr) {
+        Expr *expr = new_expr(EXPR_TERNARY);
+        expr->ternary_expr.eval = eval;
+        expr->ternary_expr.then_expr = then_expr;
+        expr->ternary_expr.else_expr = else_expr;
+        return expr;
+}
+
+typedef enum StmtKind {
+        STMT_RETURN,
+        STMT_BREAK,
+        STMT_CONTINUE,
+        STMT_IF,
+        STMT_SWITCH,
+        STMT_FOR,
+        STMT_WHILE,
+        STMT_DO_WHILE,
+} StmtKind;
+
+typedef struct ReturnStmt {
+        Expr *expr;
+} ReturnStmt;
+
+typedef struct ElseIf {
+        Expr *expr;
+        StmtBlock block;
+} ElseIf;
+
+typedef struct IfStmt {
+        Expr *if_expr;
+        StmtBlock if_block;
+        ElseIf *else_ifs;
+        StmtBlock else_block;
+} IfStmt;
+
+typedef struct CaseStmt {
+        Expr *expr;
+        StmtBlock block;
+} CaseStmt;
+
+typedef struct SwitchStmt {
+        Expr *expr;
+        CastStmt *case_stmts;
+        StmtBlock default_block;
+};
+     
+typedef struct Stmt {
+        StmtKind kind;
+        union {
+                ReturnStmt return_stmt;
+                IfStmt if_stmt;
+                SwitchStmt switch_stmt;
+        };
+} Stmt;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 typedef struct Expr Expr;
 typedef struct Stmt Stmt;
 typedef struct Decl Decl;
@@ -248,29 +565,6 @@ typedef struct EnumDecl {
         size_t num_items;
 } EnumDecl;
 
-typedef enum DeclKind {
-        DECL_NONE,
-        DECL_ENUM,
-        DECL_STRUCT,
-        DECL_UNION,
-        DECL_VAR,
-        DECL_CONST,
-        DECL_FUNC,
-        DECL_TYPEDEF,
-} DeclKind;
-
-typedef struct Decl {
-        DeclKind kind;
-        const char *name;
-        union {
-                EnumDecl enum_decl;
-                AggregateDecl aggregate;
-                FuncDecl func;
-                TypedefDecl typedef_decl;
-                VarDecl var;
-                ConstDecl const_decl;
-        };
-} Decl;
 
 Stmt *stmt_continue()
 {
@@ -551,125 +845,3 @@ Decl *decl_const(const char *name, Expr *expr)
         return d;
 }
 
-/* #include <stdio.h> */
-/* #include <stdlib.h> */
-
-/* char *token; */
-
-/* typedef enum typeexpr { */
-/*         NUM, */
-/*         COMP */
-/* }Type; */
-
-/* typedef enum oper { */
-/*         ADD, */
-/*         MUL */
-/* }; */
-
-/* typedef struct expr { */
-/*         Type t; */
-/*         union { */
-/*                 struct { */
-/*                         struct expr *e1; */
-/*                         enum oper op; */
-/*                         struct expr *e2; */
-/*                 }st; */
-
-/*                 int num; */
-/*         }; */
-/* }; */
-
-/* struct expr *E3() */
-/* { */
-/*         struct expr *e; */
-
-/*         if (*token >= '0' && *token <= '9') { */
-/*                 e = malloc(sizeof(struct expr)); */
-                
-/*                 e->t = NUM; */
-/*                 e->num = *token - '0'; */
-/*                 token++; */
-/*         } */
-
-/*         return e; */
-/* } */
-
-/* struct expr * E2() { */
-/*         struct expr *e = E3(); */
-
-/*         while (*token != '\0') { */
-/*                 if (*token == '*') { */
-/*                         token++; */
-/*                         struct expr *e2 = E3(); */
-
-/*                         struct expr *comb = malloc(sizeof(struct expr)); */
-/*                         comb->t = COMP; */
-/*                         comb->st.e1 = e; */
-/*                         comb->st.e2 = e2; */
-/*                         comb->st.op = MUL; */
-
-/*                         e = comb; */
-/*                 } else { */
-/*                         break; */
-/*                 } */
-/*         } */
-
-/*         return e; */
-/* } */
-
-/* struct expr * E1() { */
-/*         struct expr *e = E2(); */
-
-/*         while (*token != '\0') { */
-/*                 if (*token == '+') { */
-/*                         token++; */
-/*                         struct expr *e2 = E2(); */
-/*                         struct expr *comb = malloc(sizeof(struct expr)); */
-
-/*                         comb->t = COMP; */
-/*                         comb->st.e1 = e; */
-/*                         comb->st.e2 = e2; */
-/*                         comb->st.op = ADD; */
-
-/*                         e = comb; */
-/*                 } else { */
-/*                         break; */
-/*                 } */
-/*         } */
-
-/*         return e; */
-/* } */
-
-/* void print_ast(struct expr *e) */
-/* { */
-/*         if (e->t == NUM) { */
-/*                 printf("%d", e->num); */
-/*         } else { */
-/*                 printf("( "); */
-/*                 if (e->st.op == ADD) { */
-/*                         printf("+");  */
-/*                 } else { */
-/*                         printf("*"); */
-/*                 } */
-
-/*                 print_ast(e->st.e1); */
-/*                 printf(" "); */
-/*                 print_ast(e->st.e2); */
-/*                 printf(")"); */
-/*         } */
-/* } */
-
-/* struct expr *test_ast() */
-/* { */
-/*         char *str = "2+3*4+5*6"; */
-/*         token = str; */
-
-/*         return E1(); */
-/* } */
-
-/* int main() */
-/* { */
-/*         struct expr *e = test_ast(); */
-
-/*         print_ast(e); */
-/* } */
