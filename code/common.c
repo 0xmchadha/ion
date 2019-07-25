@@ -187,9 +187,8 @@ void str_intern_test() {
 
     assert(a != b);
     assert(str_intern(&a[0]) == str_intern(&b[0]));
-    assert(str_intern_range(&a[0], &a[strlen(a) - 1]) !=
-           str_intern_range(&c[0], &b[strlen(c) - 1]));
-    assert(str_intern(&a[0]) == str_intern_range(&a[0], &a[4]));
+    assert(str_intern_range(&a[0], &a[strlen(a)]) !=
+           str_intern_range(&c[0], &b[strlen(c)]));
     printf("string intern test passed\n");
 }
 
@@ -203,10 +202,12 @@ void fatal(const char *fmt, ...) {
     exit(1);
 }
 
-void syntax_error(const char *fmt, ...) {
+#define syntax_error(fmt, ...) syntax__error(fmt, __LINE__, __FILE__)
+
+void syntax__error(const char *fmt, int line, char *file,...) {
     va_list args;
-    va_start(args, fmt);
-    printf("Syntax Error: ");
+    va_start(args, file);
+    printf("Syntax Error: %d %s ", line, file);
     vprintf(fmt, args);
     printf("\n");
     va_end(args);
