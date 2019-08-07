@@ -113,6 +113,7 @@ typedef enum TokenKind {
     TOKEN_AND_AND,
     TOKEN_OR_OR,
     TOKEN_ASSIGN,
+	TOKEN_FIRST_ASSIGN = TOKEN_ASSIGN,
     TOKEN_ADD_ASSIGN,
     TOKEN_SUB_ASSIGN,
     TOKEN_XOR_ASSIGN,
@@ -123,6 +124,7 @@ typedef enum TokenKind {
     TOKEN_MUL_ASSIGN,
     TOKEN_DIV_ASSIGN,
     TOKEN_MOD_ASSIGN,
+	TOKEN_LAST_ASSIGN = TOKEN_MOD_ASSIGN,
     TOKEN_INC,
     TOKEN_DEC,
     TOKEN_COLON_ASSIGN,
@@ -136,7 +138,13 @@ typedef enum TokenMod {
     TOKENMOD_BIN,
 } TokenMod;
 
-char *token_to_str[] = {
+const char *token_to_str[] = {
+    [TOKEN_EOF] = "EOF",
+    [TOKEN_KEYWORD] = "KEYWORD",
+    [TOKEN_NAME] = "name",
+    [TOKEN_STR] = "str",
+    [TOKEN_INT] = "int",
+    [TOKEN_FLOAT] = "float",
     [TOKEN_QUESTION] = "?",
     [TOKEN_COLON] = ":",
     [TOKEN_LPAREN] = "(",
@@ -610,6 +618,10 @@ repeat:
     token.end = stream;
 }
 
+bool is_keyword(const char *name) {
+		return token.kind == TOKEN_KEYWORD && token.name == name;
+}
+
 bool is_token(TokenKind kind) {
     return token.kind == kind;
 }
@@ -627,15 +639,6 @@ bool match_token(TokenKind kind) {
     return false;
 }
 
-bool expect_token(TokenKind kind) {
-    if (is_token(kind)) {
-        next_token();
-        return true;
-    }
-
-    fatal("expected token ");
-    return false;
-}
 
 bool match_keyword(const char *keyword) {
     if (token.kind == TOKEN_KEYWORD && token.name == keyword) {
@@ -650,6 +653,33 @@ static void init_stream(const char *str) {
     stream = (char *) str;
     next_token();
 }
+
+const char *token_kind_name(kind) {
+		if (kind < sizeof(token_to_str)/sizeof(*token_to_str)) {
+				return token_to_str[kind];
+		}
+
+		return "<unknown>";
+}
+
+const char *token_info() {
+    if (token.kind == TOKEN_NAME || token.kind == TOKEN_KEYWORD) {
+        return token.name;
+    }
+
+    return token_kind_name(token.kind);
+}
+
+bool expect_token(TokenKind kind) {
+    if (is_token(kind)) {
+        next_token();
+        return true;
+    } else {
+			fatal("expected token %s, got %s", token_kind_name(kind), token_info());
+			return false;
+	}
+}
+
 
 #define assert_token_int(val) assert(token.int_val == val && match_token(TOKEN_INT))
 #define assert_token_float(val) assert(token.float_val == val && match_token(TOKEN_FLOAT))
