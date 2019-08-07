@@ -74,6 +74,12 @@ Decl *parse_decl_var() {
     return decl_var(name, type, expr);
 }
 
+Decl *parse_decl_const() {
+    const char *name = parse_name();
+    expect_token(TOKEN_ASSIGN);
+    return decl_const(name, parse_expr());
+}
+
 FuncArg parse_decl_func_arg() {
     const char *name = parse_name();
     Typespec *type = parse_type();
@@ -557,12 +563,12 @@ Stmt *parse_stmt_switch() {
 }
 
 Stmt *parse_stmt() {
-    Decl *decl = parse_decl();
+    Decl *decl = parse_decl_opt();
 
     // expressions are parses as simple stmts
-	if (decl) {
-			return stmt_decl(decl);
-	} else {
+    if (decl) {
+        return stmt_decl(decl);
+    } else {
         if (match_keyword(keyword_if)) {
             return parse_stmt_if();
         } else if (match_keyword(keyword_for)) {
@@ -595,4 +601,3 @@ Stmt *parse_stmt() {
         }
     }
 }
-
