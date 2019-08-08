@@ -1,3 +1,8 @@
+Expr *parse_expr();
+Typespec *parse_type();
+Stmt *parse_stmt();
+StmtBlock parse_stmtblock();
+
 const char *parse_name() {
     return expect_token(TOKEN_NAME) ? token.name : NULL;
 }
@@ -27,7 +32,7 @@ Decl *parse_decl_enum() {
     }
 
     expect_token(TOKEN_RBRACES);
-    return decl_enum(name, items, buf_len(enum_items));
+    return decl_enum(name, items, buf_len(items));
 }
 
 AggregateItem parse_decl_aggregate_item() {
@@ -56,7 +61,7 @@ Decl *parse_decl_aggregate(AggregateKind kind) {
     }
 
     while (!is_token(TOKEN_RBRACES)) {
-        buf_push(items, parse_decl_aggregage_item());
+        buf_push(items, parse_decl_aggregate_item());
     }
 
     expect_token(TOKEN_RBRACES);
@@ -89,9 +94,9 @@ FuncArg parse_decl_func_arg() {
 
 Decl *parse_decl_func() {
     FuncArg *args;
-    const char *name = parse_name();
     Typespec *ret_type = NULL;
-    StmtBlock block;
+
+    const char *name = parse_name();
 
     expect_token(TOKEN_LPAREN);
     if (is_token(TOKEN_NAME)) {
@@ -106,7 +111,7 @@ Decl *parse_decl_func() {
     }
 
     StmtBlock block = parse_stmtblock();
-    return decl_func(name, args, buf_len(args), block);
+    return decl_func(name, args, buf_len(args), ret_type, block);
 }
 
 Decl *parse_decl_typedef() {
@@ -149,7 +154,7 @@ Expr *parse_expr_compound(Typespec *type) {
     Expr **args = NULL;
     expect_token(TOKEN_LBRACES);
     if (!is_token(TOKEN_RBRACES)) {
-        buf_push(args, parse_expr())
+        buf_push(args, parse_expr());
     }
 
     while (!match_token(TOKEN_COMMA)) {
@@ -226,9 +231,9 @@ Expr *parse_expr_field(Expr *expr) {
 }
 
 Expr *parse_expr_index(Expr *expr) {
-    expect_token(TOKEN_LBRACKET);
+    expect_token(TOKEN_LBRACKETS);
     Expr *index = parse_expr();
-    expect_token(TOKEN_RBRACKET);
+    expect_token(TOKEN_RBRACKETS);
     return expr_index(expr, index);
 }
 
@@ -240,7 +245,7 @@ Expr *parse_expr_misc() {
             expr = parse_expr_field(expr);
         } else if (match_token(TOKEN_LPAREN)) {
             expr = parse_expr_call(expr);
-        } else if (match_token(TOKEN_LBRACKET)) {
+        } else if (match_token(TOKEN_LBRACKETS)) {
             expr = parse_expr_index(expr);
         } else {
             break;
@@ -252,15 +257,14 @@ Expr *parse_expr_misc() {
 
 bool is_unary_op() {
     // +,-,*,&
-    return is_token(TOKEN_PLUS) || is_token(TOKEN_SUB) || is_token(TOKEN_MUL) ||
-           is_token(TOKEN_AND);
+    return is_token(TOKEN_ADD) || is_token(TOKEN_SUB) || is_token(TOKEN_MUL) || is_token(TOKEN_AND);
 }
 
-Expr *parse_expr_unary(Expr *expr) {
+Expr *parse_expr_unary() {
     if (is_unary_op()) {
         TokenKind op = token.kind;
         next_token();
-        return expr_unary(op, parse_unary_expr());
+        return expr_unary(op, parse_expr_unary());
     }
 
     return parse_expr_misc();
@@ -398,12 +402,12 @@ Typespec *parse_type() {
     for (;;) {
         if (match_token(TOKEN_MUL)) {
             type = typespec_ptr(type);
-        } else if (match_token(TOKEN_LBRACKET)) {
+        } else if (match_token(TOKEN_LBRACKETS)) {
             Expr *expr = NULL;
-            if (!is_token(TOKEN_RBRACKET)) {
+            if (!is_token(TOKEN_RBRACKETS)) {
                 expr = parse_expr();
             }
-            expect_token(TOKEN_RBRACKET);
+            expect_token(TOKEN_RBRACKETS);
             type = typespec_array(type, expr);
         } else {
             break;
@@ -420,7 +424,7 @@ bool is_assign_op() {
 Stmt *parse_simple_stmt() {
     Expr *expr = parse_expr();
 
-    if (match_token(COLON_ASSIGN)) {
+    if (match_token(TOKEN_COLON_ASSIGN)) {
         if (expr->kind == EXPR_NAME) {
             return stmt_init(expr->name, parse_expr());
         } else {
@@ -445,7 +449,7 @@ StmtBlock parse_stmtblock() {
     Stmt **stmts = NULL;
     Stmt *stmt = NULL;
 
-    while (!(stmt = sparse_stmt())) {
+    while (!(stmt = parse_stmt())) {
         buf_push(stmts, stmt);
     }
     expect_token(TOKEN_RBRACES);
@@ -462,7 +466,7 @@ Expr *parse_paren_expr() {
 
 ElseIf parse_else_if() {
     Expr *expr = parse_paren_expr();
-    return ElseIf{expr, parse_stmtblock()};
+    return (ElseIf){expr, parse_stmtblock()};
 }
 
 Stmt *parse_stmt_if() {
@@ -473,7 +477,7 @@ Stmt *parse_stmt_if() {
     for (;;) {
         if (match_keyword(keyword_else)) {
             if (match_keyword(keyword_if)) {
-                buf_push(else_ifs, parse_else_if())
+                buf_push(else_ifs, parse_else_if());
             } else {
                 else_block = parse_stmtblock();
                 break;
@@ -503,13 +507,13 @@ Stmt *parse_stmt_for() {
     }
 
     Stmt *next = parse_stmt();
-    if (stmt->kind == STMT_INIT) {
+    if (next->kind == STMT_INIT) {
         syntax_error("init statements are not allowed in for-statement's next clause");
     }
 
     expect_token(TOKEN_RPAREN);
     StmtBlock block = parse_stmtblock();
-    return stmt_for(init, cond, next, block);
+    return stmt_for(init, expr, next, block);
 }
 
 Stmt *parse_stmt_do_while() {

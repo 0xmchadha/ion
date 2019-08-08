@@ -1,3 +1,105 @@
+typedef struct Expr Expr;
+typedef struct Decl Decl;
+typedef struct Stmt Stmt;
+typedef struct Typespec Typespec;
+
+typedef enum StmtKind {
+    STMT_NONE,
+    STMT_DECL,
+    STMT_RETURN,
+    STMT_BREAK,
+    STMT_CONTINUE,
+    STMT_BLOCK,
+    STMT_IF,
+    STMT_WHILE,
+    STMT_DO_WHILE,
+    STMT_FOR,
+    STMT_SWITCH,
+    STMT_ASSIGN,
+    STMT_INIT,
+    STMT_EXPR,
+} StmtKind;
+
+typedef struct StmtBlock {
+    Stmt **stmts;
+    size_t num_stmts;
+} StmtBlock;
+
+typedef struct StmtReturn {
+    Expr *expr;
+} StmtReturn;
+
+typedef struct ElseIf {
+    Expr *expr;
+    StmtBlock block;
+} ElseIf;
+
+typedef struct StmtIf {
+    Expr *expr;
+    StmtBlock if_block;
+    ElseIf *else_ifs;
+    size_t num_elseifs;
+    StmtBlock else_block;
+} StmtIf;
+
+typedef struct StmtWhile {
+    Expr *expr;
+    StmtBlock block;
+} StmtWhile;
+
+typedef struct StmtDoWhile {
+    StmtBlock block;
+    Expr *expr;
+} StmtDoWhile;
+
+typedef struct StmtFor {
+    Stmt *init;
+    Expr *cond;
+    Stmt *next;
+    StmtBlock block;
+} StmtFor;
+
+typedef struct SwitchCase {
+    Expr *expr;
+    bool is_default;
+    Stmt **stmts;
+    size_t num_stmts;
+} SwitchCase;
+
+typedef struct StmtSwitch {
+    Expr *expr;
+    SwitchCase *cases;
+    size_t num_cases;
+} StmtSwitch;
+
+typedef struct StmtAssign {
+    Expr *left_expr;
+    TokenKind op;
+    Expr *right_expr;
+} StmtAssign;
+
+typedef struct StmtInit {
+    const char *name;
+    Expr *expr;
+} StmtInit;
+
+typedef struct Stmt {
+    StmtKind kind;
+    union {
+        StmtBlock block;
+        StmtReturn stmt_return;
+        StmtIf stmt_if;
+        StmtWhile stmt_while;
+        StmtDoWhile stmt_do_while;
+        StmtFor stmt_for;
+        StmtSwitch stmt_switch;
+        StmtAssign stmt_assign;
+        StmtInit stmt_init;
+        Decl *decl;
+        Expr *expr;
+    };
+} Stmt;
+
 typedef enum DeclKind {
     DECL_NONE,
     DECL_ENUM,
@@ -26,7 +128,7 @@ typedef struct EnumDecl {
 } EnumDecl;
 
 typedef struct AggregateItem {
-    char **names;
+    const char **names;
     size_t num_items;
     Typespec *type;
 } AggregateItem;
@@ -97,16 +199,17 @@ typedef struct Expr {
     union {
         uint64_t int_val;
         double float_val;
-        char *str_val;
-        char *name;
+        const char *str_val;
+        const char *name;
+
         struct {
             Expr *expr;
-            Expr *index
+            Expr *index;
         } index_expr;
 
         struct {
             Expr *expr;
-            char *name;
+            const char *name;
         } field_expr;
 
         struct {
@@ -129,13 +232,13 @@ typedef struct Expr {
             Expr *expr;
         } cast_expr;
         struct {
-            tokenKind op;
+            TokenKind op;
             Expr *expr;
         } unary_expr;
 
         struct {
             Expr *left;
-            tokenKind op;
+            TokenKind op;
             Expr *right;
         } binary_expr;
 
@@ -159,7 +262,7 @@ typedef struct FuncTypespec {
     Typespec **args;
     size_t num_args;
     Typespec *ret;
-} type_func;
+} FuncTypespec;
 
 typedef struct ArrayTypespec {
     Expr *expr;
@@ -167,7 +270,7 @@ typedef struct ArrayTypespec {
 } ArrayTypespec;
 
 typedef struct PtrTypespec {
-    Typepsec *type;
+    Typespec *type;
 } PtrTypespec;
 
 typedef struct Typespec {
@@ -175,104 +278,7 @@ typedef struct Typespec {
     union {
         const char *name;
         FuncTypespec func;
-        PtrTypspec ptr;
+        PtrTypespec ptr;
         ArrayTypespec array;
     };
 } Typespec;
-
-typedef enum StmtKind {
-    STMT_NONE,
-    STMT_DECL,
-    STMT_RETURN,
-    STMT_BREAK,
-    STMT_CONTINUE,
-    STMT_BLOCK,
-    STMT_IF,
-    STMT_WHILE,
-    STMT_DO_WHILE,
-    STMT_FOR,
-    STMT_SWITCH,
-    STMT_ASSIGN,
-    STMT_INIT,
-    STMT_EXPR,
-} StmtKind;
-
-typedef struct StmtReturn {
-    Expr *expr;
-} StmtReturn;
-
-typedef struct ElseIf {
-    Expr *expr;
-    StmtBlock block;
-} Elseif;
-
-typedef struct StmtIf {
-    Expr *expr;
-    StmtBlock if_block;
-    ElseIf *else_ifs;
-    size_t num_elseifs;
-    StmtBlock else_block;
-} StmtIf;
-
-typedef struct StmtWhile {
-    Expr *expr;
-    StmtBlock block;
-} StmtWhile;
-
-typedef struct StmtDoWhile {
-    StmtBlock block;
-    Expr *expr;
-} StmtDoWhile;
-
-typedef struct StmtFor {
-    Stmt *init;
-    Expr *cond;
-    Stmt *next;
-    StmtBlock block;
-} StmtFor;
-
-typedef struct SwitchCase {
-    Expr *expr;
-    bool is_default;
-    Stmt **stmts;
-    size_t num_stmts;
-};
-
-typedef struct StmtSwitch {
-    Expr *expr;
-    SwitchCase *cases;
-    size_t num_cases;
-} StmtSwitch;
-
-typedef struct StmtAssign {
-    Expr *left_expr;
-    TokenKind op;
-    Expr *right_expr;
-} StmtAssign;
-
-typedef struct StmtInit {
-    const char *name;
-    Expr *expr;
-} StmtInit;
-
-typedef struct StmtBlock {
-    Stmt **stmts;
-    size_t num_stmts;
-} StmtBlock;
-
-typedef struct Stmt {
-    StmtKind kind;
-    union {
-        Decl *decl;
-        StmtBlock block;
-        StmtReturn stmt_return;
-        StmtIf *stmt_if;
-        StmtWhile *stmt_while;
-        StmtDoWhile *stmt_do_while;
-        StmtFor *stmt_for;
-        StmtSwitch *stmt_switch;
-        StmtAssign *stmt_assign;
-        StmtInit *stmt_init;
-        Expr *expr;
-    };
-} Stmt;

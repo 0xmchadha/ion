@@ -1,4 +1,3 @@
-#include "common.c"
 // keywords
 const char *keyword_typedef;
 const char *keyword_enum;
@@ -654,7 +653,7 @@ static void init_stream(const char *str) {
     next_token();
 }
 
-const char *token_kind_name(kind) {
+const char *token_kind_name(TokenKind kind) {
 		if (kind < sizeof(token_to_str)/sizeof(*token_to_str)) {
 				return token_to_str[kind];
 		}
@@ -751,9 +750,4 @@ static void lex_test() {
     assert(match_token(TOKEN_LSHIFT_ASSIGN));
 
     printf("lex test passed\n");
-}
-
-int main() {
-    common_test();
-    lex_test();
 }
