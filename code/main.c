@@ -16,9 +16,7 @@
 #include "ast.c"
 #include "parse.c"
 
-int main(){
-        common_test();
-        lex_test();
+int main() {
+    common_test();
+    lex_test();
 }
-
-
