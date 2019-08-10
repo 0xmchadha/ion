@@ -15,8 +15,10 @@
 #include "ast.h"
 #include "ast.c"
 #include "parse.c"
+#include "print.c"
 
 int main() {
     common_test();
     lex_test();
+	print_decl_test();
 }

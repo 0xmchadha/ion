@@ -4,11 +4,12 @@ Stmt *parse_stmt();
 StmtBlock parse_stmtblock();
 
 const char *parse_name() {
-    return expect_token(TOKEN_NAME) ? token.name : NULL;
+    const char *name = token.name;
+    expect_token(TOKEN_NAME);
+    return name;
 }
 
 EnumItem parse_decl_enum_item() {
-    expect_token(TOKEN_COMMA);
     const char *name = parse_name();
     Expr *expr = NULL;
 
@@ -53,7 +54,7 @@ AggregateItem parse_decl_aggregate_item() {
 
 Decl *parse_decl_aggregate(AggregateKind kind) {
     const char *name = parse_name();
-    AggregateItem *items;
+    AggregateItem *items = NULL;
     expect_token(TOKEN_LBRACES);
 
     if (!is_token(TOKEN_RBRACES)) {
@@ -70,10 +71,19 @@ Decl *parse_decl_aggregate(AggregateKind kind) {
 
 Decl *parse_decl_var() {
     const char *name = parse_name();
-    Typespec *type = parse_type();
+    Typespec *type = NULL;
     Expr *expr = NULL;
-    if (match_token(TOKEN_ASSIGN)) {
+
+    if (match_token(TOKEN_COLON)) {
+        type = parse_type();
+        if (match_token(TOKEN_ASSIGN)) {
+            expr = parse_expr();
+        }
+    } else if (match_token(TOKEN_ASSIGN)) {
         expr = parse_expr();
+    } else {
+        syntax_error("var declaration expects a :type = expr or :type");
+        return NULL;
     }
 
     return decl_var(name, type, expr);
@@ -87,13 +97,14 @@ Decl *parse_decl_const() {
 
 FuncArg parse_decl_func_arg() {
     const char *name = parse_name();
+    expect_token(TOKEN_COLON);
     Typespec *type = parse_type();
 
     return (FuncArg){name, type};
 }
 
 Decl *parse_decl_func() {
-    FuncArg *args;
+    FuncArg *args = NULL;
     Typespec *ret_type = NULL;
 
     const char *name = parse_name();
@@ -106,7 +117,7 @@ Decl *parse_decl_func() {
         buf_push(args, parse_decl_func_arg());
     }
     expect_token(TOKEN_RPAREN);
-    if (is_token(TOKEN_COLON)) {
+    if (match_token(TOKEN_COLON)) {
         ret_type = parse_type();
     }
 
@@ -116,6 +127,7 @@ Decl *parse_decl_func() {
 
 Decl *parse_decl_typedef() {
     const char *name = parse_name();
+    expect_token(TOKEN_ASSIGN);
     Typespec *type = parse_type();
     return decl_typedef(name, type);
 }
@@ -157,7 +169,7 @@ Expr *parse_expr_compound(Typespec *type) {
         buf_push(args, parse_expr());
     }
 
-    while (!match_token(TOKEN_COMMA)) {
+    while (match_token(TOKEN_COMMA)) {
         buf_push(args, parse_expr());
     }
     expect_token(TOKEN_RBRACES);
@@ -188,10 +200,13 @@ Expr *parse_simple_expr() {
             expect_token(TOKEN_RPAREN);
             return expr_sizeof_expr(expr);
         }
-    } else if (match_token(TOKEN_NAME)) {
-        const char *name = token.name;
-        next_token();
-        return expr_name(name);
+    } else if (is_token(TOKEN_NAME)) {
+        const char *name = parse_name();
+        if (is_token(TOKEN_LBRACES)) {
+            return parse_expr_compound(typespec_name(name));
+        } else {
+            return expr_name(name);
+        }
     } else if (match_token(TOKEN_LPAREN)) {
         if (match_token(TOKEN_COLON)) {
             Typespec *type = parse_type();
@@ -202,6 +217,8 @@ Expr *parse_simple_expr() {
             expect_token(TOKEN_RPAREN);
             return expr;
         }
+    } else if (is_token(TOKEN_LBRACES)) {
+			return parse_expr_compound(NULL);
     } else {
         syntax_error("Unexpected token %s in expression", token_info());
         return NULL;
@@ -226,6 +243,7 @@ Expr *parse_expr_call(Expr *expr) {
 }
 
 Expr *parse_expr_field(Expr *expr) {
+    expect_token(TOKEN_DOT);
     const char *field = parse_name();
     return expr_field(expr, field);
 }
@@ -241,11 +259,11 @@ Expr *parse_expr_misc() {
     Expr *expr = parse_simple_expr();
 
     for (;;) {
-        if (match_token(TOKEN_DOT)) {
+        if (is_token(TOKEN_DOT)) {
             expr = parse_expr_field(expr);
-        } else if (match_token(TOKEN_LPAREN)) {
+        } else if (is_token(TOKEN_LPAREN)) {
             expr = parse_expr_call(expr);
-        } else if (match_token(TOKEN_LBRACKETS)) {
+        } else if (is_token(TOKEN_LBRACKETS)) {
             expr = parse_expr_index(expr);
         } else {
             break;
@@ -382,10 +400,9 @@ Typespec *parse_type_func() {
 Typespec *parse_type_base() {
     if (is_token(TOKEN_NAME)) {
         const char *name = parse_name();
-        next_token();
         return typespec_name(name);
     } else if (match_keyword(keyword_func)) {
-        return parse_type_base();
+        return parse_type_func();
     } else if (match_token(TOKEN_LPAREN)) {
         Typespec *type = parse_type();
         expect_token(TOKEN_RPAREN);
@@ -449,11 +466,11 @@ StmtBlock parse_stmtblock() {
     Stmt **stmts = NULL;
     Stmt *stmt = NULL;
 
-    while (!(stmt = parse_stmt())) {
-        buf_push(stmts, stmt);
+    while (!is_token(TOKEN_RBRACES)) {
+        buf_push(stmts, parse_stmt());
     }
-    expect_token(TOKEN_RBRACES);
 
+    expect_token(TOKEN_RBRACES);
     return (StmtBlock){stmts, buf_len(stmts)};
 }
 
@@ -495,7 +512,7 @@ Stmt *parse_stmt_for() {
     Stmt *init = NULL;
 
     if (!match_token(TOKEN_SEMICOLON)) {
-        init = parse_stmt();
+        init = parse_simple_stmt();
         expect_token(TOKEN_SEMICOLON);
     }
 
@@ -506,9 +523,12 @@ Stmt *parse_stmt_for() {
         expect_token(TOKEN_SEMICOLON);
     }
 
-    Stmt *next = parse_stmt();
-    if (next->kind == STMT_INIT) {
-        syntax_error("init statements are not allowed in for-statement's next clause");
+    Stmt *next = NULL;
+    if (!is_token(TOKEN_RPAREN)) {
+        Stmt *next = parse_simple_stmt();
+        if (next->kind == STMT_INIT) {
+            syntax_error("init statements are not allowed in for-statement's next clause");
+        }
     }
 
     expect_token(TOKEN_RPAREN);

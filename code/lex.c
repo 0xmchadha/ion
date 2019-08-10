@@ -112,7 +112,7 @@ typedef enum TokenKind {
     TOKEN_AND_AND,
     TOKEN_OR_OR,
     TOKEN_ASSIGN,
-	TOKEN_FIRST_ASSIGN = TOKEN_ASSIGN,
+    TOKEN_FIRST_ASSIGN = TOKEN_ASSIGN,
     TOKEN_ADD_ASSIGN,
     TOKEN_SUB_ASSIGN,
     TOKEN_XOR_ASSIGN,
@@ -123,7 +123,7 @@ typedef enum TokenKind {
     TOKEN_MUL_ASSIGN,
     TOKEN_DIV_ASSIGN,
     TOKEN_MOD_ASSIGN,
-	TOKEN_LAST_ASSIGN = TOKEN_MOD_ASSIGN,
+    TOKEN_LAST_ASSIGN = TOKEN_MOD_ASSIGN,
     TOKEN_INC,
     TOKEN_DEC,
     TOKEN_COLON_ASSIGN,
@@ -154,7 +154,7 @@ const char *token_to_str[] = {
     [TOKEN_RBRACES] = "}",
     [TOKEN_COMMA] = ",",
     [TOKEN_DOT] = ".",
-    [TOKEN_SEMICOLON] = ",",
+    [TOKEN_SEMICOLON] = ";",
     [TOKEN_MUL] = "*",
     [TOKEN_DIV] = "/",
     [TOKEN_MOD] = "%",
@@ -203,16 +203,16 @@ typedef struct {
 } token_t;
 
 token_t token;
-char *stream;
+const char *stream;
 
-int char_digit[] = {
+uint8_t char_digit[] = {
     ['0'] = 0,  ['1'] = 1,  ['2'] = 2,  ['3'] = 3,  ['4'] = 4,  ['5'] = 5,  ['6'] = 6,  ['7'] = 7,
     ['8'] = 8,  ['9'] = 9,  ['a'] = 10, ['A'] = 10, ['b'] = 11, ['B'] = 11, ['c'] = 12, ['C'] = 12,
     ['d'] = 13, ['D'] = 13, ['e'] = 14, ['E'] = 14, ['f'] = 15, ['F'] = 15,
 };
 
 static inline int char_to_digit(char c) {
-    return (c == '0' || char_digit[c] != 0) ? char_digit[c] : -1;
+		return (c == '0' || char_digit[(uint8_t)c] != 0) ? char_digit[(uint8_t)c] : -1;
 }
 
 void scan_int() {
@@ -272,7 +272,7 @@ void scan_int() {
 }
 
 void scan_float() {
-    char *digit_stream = stream;
+    const char *digit_stream = stream;
 
     switch (tolower(*stream)) {
     case '0':
@@ -438,7 +438,7 @@ repeat:
     case '7':
     case '8':
     case '9': {
-        char *digit_stream = stream;
+        const char *digit_stream = stream;
 
         while (isdigit(*digit_stream)) {
             digit_stream++;
@@ -618,7 +618,7 @@ repeat:
 }
 
 bool is_keyword(const char *name) {
-		return token.kind == TOKEN_KEYWORD && token.name == name;
+    return token.kind == TOKEN_KEYWORD && token.name == name;
 }
 
 bool is_token(TokenKind kind) {
@@ -638,7 +638,6 @@ bool match_token(TokenKind kind) {
     return false;
 }
 
-
 bool match_keyword(const char *keyword) {
     if (token.kind == TOKEN_KEYWORD && token.name == keyword) {
         next_token();
@@ -649,16 +648,16 @@ bool match_keyword(const char *keyword) {
 }
 
 static void init_stream(const char *str) {
-    stream = (char *) str;
+    stream = str;
     next_token();
 }
 
 const char *token_kind_name(TokenKind kind) {
-		if (kind < sizeof(token_to_str)/sizeof(*token_to_str)) {
-				return token_to_str[kind];
-		}
+    if (kind < sizeof(token_to_str) / sizeof(*token_to_str)) {
+        return token_to_str[kind];
+    }
 
-		return "<unknown>";
+    return "<unknown>";
 }
 
 const char *token_info() {
@@ -674,11 +673,10 @@ bool expect_token(TokenKind kind) {
         next_token();
         return true;
     } else {
-			fatal("expected token %s, got %s", token_kind_name(kind), token_info());
-			return false;
-	}
+        fatal("expected token '%s' got '%s'", token_kind_name(kind), token_info());
+        return false;
+    }
 }
-
 
 #define assert_token_int(val) assert(token.int_val == val && match_token(TOKEN_INT))
 #define assert_token_float(val) assert(token.float_val == val && match_token(TOKEN_FLOAT))
@@ -690,6 +688,7 @@ bool expect_token(TokenKind kind) {
 
 static void lex_test() {
     // identifier test
+    init_keywords();
     init_stream("hello123");
     assert_token_ident(str_intern("hello123"));
     assert_token_eof();

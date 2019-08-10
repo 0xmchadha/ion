@@ -103,8 +103,7 @@ typedef struct Stmt {
 typedef enum DeclKind {
     DECL_NONE,
     DECL_ENUM,
-    DECL_STRUCT,
-    DECL_UNION,
+    DECL_AGGREGATE,
     DECL_VAR,
     DECL_CONST,
     DECL_FUNC,
@@ -134,6 +133,7 @@ typedef struct AggregateItem {
 } AggregateItem;
 
 typedef struct AggregateDecl {
+    AggregateKind kind;
     size_t num_items;
     AggregateItem *items;
 } AggregateDecl;

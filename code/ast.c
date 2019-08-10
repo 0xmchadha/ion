@@ -1,5 +1,23 @@
+Arena ast_arena;
+
+void *ast_alloc(size_t size) {
+    void *mem = arena_alloc(&ast_arena, size);
+    memset(mem, 0, size);
+    return mem;
+}
+
+void *ast_dup(const void *src, size_t size) {
+    if (size == 0) {
+        return NULL;
+    }
+
+    void *mem = arena_alloc(&ast_arena, size);
+    memcpy(mem, src, size);
+    return mem;
+}
+
 Decl *decl_new(DeclKind kind, const char *name) {
-    Decl *decl = xmalloc(sizeof(Decl));
+    Decl *decl = arena_alloc(&ast_arena, sizeof(Decl));
     decl->name = name;
     decl->kind = kind;
     return decl;
@@ -25,9 +43,9 @@ Decl *decl_const(const char *name, Expr *expr) {
     return decl;
 }
 
-Decl *decl_aggregate(AggregateKind kind, const char *name, AggregateItem *items,
-                     size_t num_items) {
-    Decl *decl = decl_new(kind, name);
+Decl *decl_aggregate(AggregateKind kind, const char *name, AggregateItem *items, size_t num_items) {
+    Decl *decl = decl_new(DECL_AGGREGATE, name);
+    decl->aggregate_decl.kind = kind;
     decl->aggregate_decl.items = items;
     decl->aggregate_decl.num_items = num_items;
     return decl;
@@ -40,15 +58,17 @@ Decl *decl_func(const char *name, FuncArg *args, size_t num_func_args, Typespec 
     decl->func_decl.num_func_args = num_func_args;
     decl->func_decl.type = type;
     decl->func_decl.block = block;
+	return decl;
 }
 
 Decl *decl_typedef(const char *name, Typespec *type) {
     Decl *decl = decl_new(DECL_TYPEDEF, name);
     decl->typedef_decl.type = type;
+	return decl;
 }
 
 Expr *expr_new(ExprKind kind) {
-    Expr *expr = xmalloc(sizeof(struct Expr));
+    Expr *expr = arena_alloc(&ast_arena, sizeof(struct Expr));
     expr->kind = kind;
     return expr;
 }
@@ -130,7 +150,8 @@ Expr *expr_binary(Expr *left, TokenKind op, Expr *right) {
     Expr *expr = expr_new(EXPR_BINARY);
     expr->binary_expr.left = left;
     expr->binary_expr.right = right;
-    expr->binary_expr.op =op;
+    expr->binary_expr.op = op;
+	return expr;
 }
 
 Expr *expr_ternary(Expr *eval, Expr *then_expr, Expr *else_expr) {
@@ -142,7 +163,7 @@ Expr *expr_ternary(Expr *eval, Expr *then_expr, Expr *else_expr) {
 }
 
 Typespec *typespec_new(TypespecKind kind) {
-    Typespec *type = xmalloc(sizeof(Typespec));
+    Typespec *type = arena_alloc(&ast_arena, sizeof(Typespec));
     type->kind = kind;
     return type;
 }
@@ -175,7 +196,7 @@ Typespec *typespec_ptr(Typespec *ptr_type) {
 }
 
 Stmt *stmt_new(StmtKind kind) {
-    Stmt *stmt = xmalloc(sizeof(Stmt));
+    Stmt *stmt = arena_alloc(&ast_arena, sizeof(Stmt));
     stmt->kind = kind;
     return stmt;
 }
@@ -183,7 +204,7 @@ Stmt *stmt_new(StmtKind kind) {
 Stmt *stmt_return(Expr *expr) {
     Stmt *stmt = stmt_new(STMT_RETURN);
     stmt->stmt_return.expr = expr;
-	return stmt;
+    return stmt;
 }
 
 Stmt *stmt_break() {

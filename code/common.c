@@ -7,14 +7,14 @@ typedef struct BufHdr {
 #define buf__hdr(buf) ((struct BufHdr *) ((char *) buf - offsetof(struct BufHdr, buf_)))
 #define buf__fit(buf)                                                                              \
     ((!(buf) || buf__hdr(buf)->len == buf__hdr(buf)->cap) ? (buf = buf_grow(buf, sizeof(*buf)))    \
-                                                          : (void) 0)
+                                                          : 0)
 
 // macros to be used by clients
 #define buf_push(buf, ...) (buf__fit(buf), ((buf)[buf__hdr(buf)->len++] = (__VA_ARGS__)))
 #define buf_len(buf) ((buf) ? (buf__hdr(buf)->len) : 0)
 #define buf_cap(buf) ((buf) ? buf__hdr(buf)->cap : 0)
-#define buf_free(buf) (buf) ? (free(buf__hdr(buf)), (buf) = NULL) : (void) 0
-#define buf_sizeof(buf) (buf) ? (buf_len(buf) * sizeof(*buf)) : 0
+#define buf_free(buf) ((buf) ? (free(buf__hdr(buf)), (buf) = NULL) : 0)
+#define buf_sizeof(buf) ((buf) ? (buf_len(buf) * sizeof(*buf)) : 0)
 
 void *xmalloc(size_t num_bytes) {
     void *ptr = malloc(num_bytes);
@@ -63,9 +63,9 @@ void *buf_grow(void *_buf, int elem_size) {
 #define ALIGN_DOWN_PTR(n, a) ((void *) ALIGN_DOWN((uint64_t)(n), (a)))
 
 typedef struct Arena {
-    void **blocks;
-    void *ptr;
-    void *end;
+    char **blocks;
+    char *ptr;
+    char *end;
 } Arena;
 
 void arena_grow(Arena *arena) {
@@ -77,8 +77,8 @@ void arena_grow(Arena *arena) {
     arena->end = arena->ptr + ARENA_BLOCK_SIZE;
 }
 
-void *arena_free(Arena *arena) {
-    for (int i = 0; i < buf_len(arena->blocks); i++) {
+void arena_free(Arena *arena) {
+    for (size_t i = 0; i < buf_len(arena->blocks); i++) {
         free(arena->blocks[i]);
     }
 
@@ -90,9 +90,9 @@ void *arena_alloc(Arena *arena, size_t size) {
     assert(POW_OF_2(ARENA_ALIGNMENT));
     size = ALIGN_UP(size, ARENA_ALIGNMENT);
 
-    if (size > (arena->end - arena->ptr)) {
+    if (size > (size_t)(arena->end - arena->ptr)) {
         arena_grow(arena);
-        assert(size <= arena->end - arena->ptr);
+        assert(size <= (size_t)(arena->end - arena->ptr));
     }
 
     void *ptr = arena->ptr;
@@ -103,7 +103,7 @@ void *arena_alloc(Arena *arena, size_t size) {
 
 void arena_test() {
     Arena arena = {0};
-    void *ptr1, *ptr2;
+    char *ptr1, *ptr2;
     ptr1 = arena_alloc(&arena, 5);
 
     assert(ptr1 == ALIGN_DOWN_PTR(ptr1, ARENA_ALIGNMENT));
