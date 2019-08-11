@@ -9,6 +9,40 @@ void print_newline() {
 }
 
 void print_typespec(Typespec *type) {
+    switch (type->kind) {
+    case TYPESPEC_NONE:
+        break;
+    case TYPESPEC_NAME:
+        printf("%s", type->name);
+        break;
+    case TYPESPEC_FUNC:
+        printf("(func (");
+        for (Typespec **args = type->func.args; args != type->func.args + type->func.num_args;
+             args++) {
+            printf(" ");
+            print_typespec(*args);
+        }
+        printf(" ) ");
+        if (type->func.ret) {
+            print_typespec(type->func.ret);
+        }
+        printf(")");
+        break;
+    case TYPESPEC_ARRAY:
+        printf("(array ");
+        print_typespec(type->array.type);
+        printf(" ");
+        if (type->array.expr) {
+            print_expr(type->array.expr);
+        }
+        printf(")");
+        break;
+    case TYPESPEC_PTR:
+			printf("(ptr ");
+			print_typespec(type->ptr.type);
+			printf(")");
+        break;
+    }
 }
 
 void print_expr(Expr *expr) {
@@ -135,7 +169,12 @@ void print_stmt(Stmt *stmt) {
         break;
     case STMT_RETURN:
         printf("(return ");
-        print_expr(stmt->stmt_return.expr);
+        if (stmt->stmt_return.expr) {
+            print_expr(stmt->stmt_return.expr);
+        } else {
+            printf("nil");
+        }
+        printf(")");
         break;
     case STMT_BREAK:
         printf("(break)");
@@ -165,27 +204,83 @@ void print_stmt(Stmt *stmt) {
             indent--;
             printf(")");
         }
-		print_newline();
-		printf("(else ");
-		indent++;
-		print_newline();
-		print_stmtblock(stmt->stmt_if.else_block);
-		printf(")");
-		indent--;
+        print_newline();
+        printf("(else ");
+        indent++;
+        print_newline();
+        print_stmtblock(stmt->stmt_if.else_block);
+        printf(")");
+        indent--;
         break;
     case STMT_WHILE:
+        printf("(while ");
+        print_expr(stmt->stmt_while.expr);
+        indent++;
+        print_newline();
+        print_stmtblock(stmt->stmt_while.block);
+        indent--;
+        printf(")");
         break;
     case STMT_DO_WHILE:
+        printf("(do ");
+        indent++;
+        print_newline();
+        print_stmtblock(stmt->stmt_do_while.block);
+        indent--;
+        print_newline();
+        printf(" while ");
+        print_expr(stmt->stmt_do_while.expr);
+        printf(")");
         break;
     case STMT_FOR:
-        break;
-    case STMT_SWITCH:
+        printf("(for ");
+        print_stmt(stmt->stmt_for.init);
+        print_expr(stmt->stmt_for.cond);
+        print_stmt(stmt->stmt_for.next);
+        indent++;
+        print_newline();
+        print_stmtblock(stmt->stmt_for.block);
+        indent--;
+        printf(")");
         break;
     case STMT_ASSIGN:
+        printf("(");
+        print_expr(stmt->stmt_assign.left_expr);
+        printf("%s", token_kind_name(stmt->stmt_assign.op));
+        if (stmt->stmt_assign.right_expr) {
+            print_expr(stmt->stmt_assign.right_expr);
+        }
+        printf(")");
         break;
     case STMT_INIT:
+        printf("(:= %s ", stmt->stmt_init.name);
+        print_expr(stmt->stmt_init.expr);
+        printf(")");
+        break;
+    case STMT_SWITCH:
+        printf("(switch ");
+        print_expr(stmt->stmt_switch.expr);
+        indent++;
+        for (SwitchCase *cases = stmt->stmt_switch.cases;
+             cases != stmt->stmt_switch.cases + stmt->stmt_switch.num_cases; cases++) {
+            print_newline();
+            if (cases->is_default) {
+                printf("(default");
+            } else {
+                printf("(case ");
+                print_expr(cases->expr);
+            }
+            indent++;
+            print_newline();
+            StmtBlock block = (StmtBlock){cases->stmts, cases->num_stmts};
+            print_stmtblock(block);
+            indent--;
+        }
+        indent--;
+
         break;
     case STMT_EXPR:
+        print_expr(stmt->expr);
         break;
     }
 }
@@ -284,10 +379,12 @@ void print_decl_test() {
         "const n = sizeof(:int*[16])",
         "const n = sizeof(1+2)",
         "var x = b == 1 ? 1+2 : 3-4",
-        "func fact(n: int): int { trace(\"fact\"); if (n==0){return 1;} else {return n * fact(n-1);}}",
+        "func fact(n: int): int { trace(\"fact\"); if (n==0){return 1;} else {return n * "
+        "fact(n-1);}}",
         "func fact(n :int) :int { p := 1; for (i := 1 ; i <= n; i++) { p *= i; } return p; }",
         "var foo = a ? a&b + c<<d + e*f == +u-v-w + *g/h(x,y) + -i%k[x] && m <= n*(p+q)/r:0",
-        "func f(x: int): bool { switch(x) { case 0: case 1: return true; case 2: default: return false;} }",
+        "func f(x: int): bool { switch(x) { case 0: case 1: return true; case 2: default: return "
+        "false;} }",
         "const pi = 3.14",
         "var v = Vector{1.0, -1.0}",
         "var v :Vector = {1.0, -1.0}",
@@ -296,6 +393,7 @@ void print_decl_test() {
         "typedef T = (func(int):int)[16]",
         "func f() { enum E {A,B,C} return; }",
         "func f() { if (1) { return 1;} else if (2) {return 2;} else {return 3;}}",
+		"typedef cmplx = int***[16]",
     };
 
     for (size_t i = 0; i < sizeof(decl) / sizeof(*decl); i++) {

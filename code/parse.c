@@ -526,7 +526,7 @@ Stmt *parse_stmt_for() {
 
     Stmt *next = NULL;
     if (!is_token(TOKEN_RPAREN)) {
-        Stmt *next = parse_simple_stmt();
+        next = parse_simple_stmt();
         if (next->kind == STMT_INIT) {
             syntax_error("init statements are not allowed in for-statement's next clause");
         }
