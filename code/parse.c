@@ -218,7 +218,7 @@ Expr *parse_simple_expr() {
             return expr;
         }
     } else if (is_token(TOKEN_LBRACES)) {
-			return parse_expr_compound(NULL);
+        return parse_expr_compound(NULL);
     } else {
         syntax_error("Unexpected token %s in expression", token_info());
         return NULL;
@@ -333,7 +333,7 @@ Expr *parse_expr_cmp() {
         TokenKind op = token.kind;
         next_token();
         Expr *right_expr = parse_expr_add();
-        expr_binary(expr, op, right_expr);
+        expr = expr_binary(expr, op, right_expr);
     }
 
     return expr;
@@ -486,6 +486,7 @@ ElseIf parse_else_if() {
     return (ElseIf){expr, parse_stmtblock()};
 }
 
+void print_expr(Expr *);
 Stmt *parse_stmt_if() {
     Expr *expr = parse_paren_expr();
     StmtBlock if_block = parse_stmtblock(), else_block = {0};
@@ -503,7 +504,7 @@ Stmt *parse_stmt_if() {
             break;
         }
     }
-
+	
     return stmt_if(expr, if_block, else_ifs, buf_len(else_ifs), else_block);
 }
 
