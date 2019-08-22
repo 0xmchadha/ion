@@ -223,3 +223,34 @@ ternary_expr = or_expr ('?' ternary_expr ':' ternary_expr)?
 expr = ternary_expr
 
 var v: Vector
+
+
+----------------
+
+Order independent declarations
+
+func a() {		  
+   b();
+}
+
+func b() {
+   a()
+}
+
+const a = b
+const b = 1
+
+struct S {
+     t: T
+};
+
+struct T {
+	 s: S*
+};
+
+func a() {
+	    
+   
+     {
+	 }
+}

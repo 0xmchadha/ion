@@ -16,6 +16,8 @@ void *ast_dup(const void *src, size_t size) {
     return mem;
 }
 
+#define AST_DUP(x) ast_dup(x, sizeof(*x) * num_##x)
+
 Decl *decl_new(DeclKind kind, const char *name) {
     Decl *decl = arena_alloc(&ast_arena, sizeof(Decl));
     decl->name = name;
@@ -23,9 +25,9 @@ Decl *decl_new(DeclKind kind, const char *name) {
     return decl;
 }
 
-Decl *decl_enum(const char *name, EnumItem *items, size_t num_enum_items) {
+Decl *decl_enum(const char *name, EnumItem *items, size_t num_items) {
     Decl *decl = decl_new(DECL_ENUM, name);
-    decl->enum_decl.items = items;
+    decl->enum_decl.items = AST_DUP(items);
     decl->enum_decl.num_enum_items = num_enum_items;
     return decl;
 }

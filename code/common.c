@@ -12,6 +12,7 @@ typedef struct BufHdr {
 // macros to be used by clients
 #define buf_push(buf, ...) (buf__fit(buf), ((buf)[buf__hdr(buf)->len++] = (__VA_ARGS__)))
 #define buf_len(buf) ((buf) ? (buf__hdr(buf)->len) : 0)
+#define buf_end(buf) ((buf) + buf_len(buf))		
 #define buf_cap(buf) ((buf) ? buf__hdr(buf)->cap : 0)
 #define buf_free(buf) ((buf) ? (free(buf__hdr(buf)), (buf) = NULL) : 0)
 #define buf_sizeof(buf) ((buf) ? (buf_len(buf) * sizeof(*buf)) : 0)
