@@ -11,16 +11,22 @@
 #include <string.h>
 
 #include "common.c"
+
 #include "lex.c"
+
 #include "ast.h"
+
 #include "ast.c"
+
 #include "parse.c"
+
 #include "print.c"
-//#include "resolve.c"
+
+#include "resolve.c"
 
 int main() {
     common_test();
     lex_test();
-	print_decl_test();
-//	resolve_test();
+    print_decl_test();
+    resolve_test();
 }

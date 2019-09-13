@@ -28,7 +28,7 @@ Decl *decl_new(DeclKind kind, const char *name) {
 Decl *decl_enum(const char *name, EnumItem *items, size_t num_items) {
     Decl *decl = decl_new(DECL_ENUM, name);
     decl->enum_decl.items = AST_DUP(items);
-    decl->enum_decl.num_enum_items = num_enum_items;
+    decl->enum_decl.num_enum_items = num_items;
     return decl;
 }
 
@@ -48,16 +48,16 @@ Decl *decl_const(const char *name, Expr *expr) {
 Decl *decl_aggregate(AggregateKind kind, const char *name, AggregateItem *items, size_t num_items) {
     Decl *decl = decl_new(DECL_AGGREGATE, name);
     decl->aggregate_decl.kind = kind;
-    decl->aggregate_decl.items = items;
+    decl->aggregate_decl.items = AST_DUP(items);
     decl->aggregate_decl.num_items = num_items;
     return decl;
 }
 
-Decl *decl_func(const char *name, FuncArg *args, size_t num_func_args, Typespec *type,
+Decl *decl_func(const char *name, FuncArg *args, size_t num_args, Typespec *type,
                 StmtBlock block) {
     Decl *decl = decl_new(DECL_FUNC, name);
-    decl->func_decl.args = args;
-    decl->func_decl.num_func_args = num_func_args;
+    decl->func_decl.args = AST_DUP(args);
+    decl->func_decl.num_func_args = num_args;
     decl->func_decl.type = type;
     decl->func_decl.block = block;
 	return decl;
@@ -102,7 +102,7 @@ Expr *expr_name(const char *name) {
 Expr *expr_compound(Typespec *type, Expr **args, size_t num_args) {
     Expr *expr = expr_new(EXPR_COMPOUND);
     expr->compound_expr.type = type;
-    expr->compound_expr.args = args;
+    expr->compound_expr.args = AST_DUP(args);
     expr->compound_expr.num_args = num_args;
     return expr;
 }
@@ -129,7 +129,7 @@ Expr *expr_unary(TokenKind op, Expr *e) {
 Expr *expr_call(Expr *e, Expr **args, size_t num_args) {
     Expr *expr = expr_new(EXPR_CALL);
     expr->call_expr.expr = e;
-    expr->call_expr.args = args;
+    expr->call_expr.args = AST_DUP(args);
     expr->call_expr.num_args = num_args;
     return expr;
 }
@@ -178,7 +178,7 @@ Typespec *typespec_name(const char *name) {
 
 Typespec *typespec_func(Typespec **args, size_t num_args, Typespec *ret) {
     Typespec *type = typespec_new(TYPESPEC_FUNC);
-    type->func.args = args;
+    type->func.args = AST_DUP(args);
     type->func.num_args = num_args;
     type->func.ret = ret;
     return type;
@@ -223,12 +223,12 @@ Stmt *stmt_block(StmtBlock block) {
     return stmt;
 }
 
-Stmt *stmt_if(Expr *expr, StmtBlock if_block, ElseIf *else_ifs, size_t num_elseifs,
+Stmt *stmt_if(Expr *expr, StmtBlock if_block, ElseIf *elseifs, size_t num_elseifs,
               StmtBlock else_block) {
     Stmt *stmt = stmt_new(STMT_IF);
     stmt->stmt_if.expr = expr;
     stmt->stmt_if.if_block = if_block;
-    stmt->stmt_if.else_ifs = else_ifs;
+    stmt->stmt_if.else_ifs = AST_DUP(elseifs);
     stmt->stmt_if.num_elseifs = num_elseifs;
     stmt->stmt_if.else_block = else_block;
     return stmt;
@@ -260,7 +260,7 @@ Stmt *stmt_for(Stmt *init, Expr *cond, Stmt *next, StmtBlock block) {
 Stmt *stmt_switch(Expr *expr, SwitchCase *cases, size_t num_cases) {
     Stmt *stmt = stmt_new(STMT_SWITCH);
     stmt->stmt_switch.expr = expr;
-    stmt->stmt_switch.cases = cases;
+    stmt->stmt_switch.cases = AST_DUP(cases);
     stmt->stmt_switch.num_cases = num_cases;
     return stmt;
 }

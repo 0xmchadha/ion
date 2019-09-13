@@ -1,178 +1,276 @@
+typedef struct Type Type;
+
+void order_expr(Expr *expr);
+void order_decl(Decl *decl);
+void order_typespec(Typespec *);
+
+typedef enum {
+    SYM_UNRESOLVED,
+    SYM_RESOLVING,
+    SYM_RESOLVED,
+} SymState;
+
+typedef enum SymKind {
+    SYM_NONE,
+    SYM_VAR,
+    SYM_CONST,
+    SYM_FUNC,
+    SYM_TYPE,
+} SymKind;
+
+typedef struct Sym {
+    const char *name;
+    SymKind kind;
+    Decl *decl;
+    SymState state;
+    union {
+        Type *type;
+    };
+} Sym;
 
 typedef enum TypeKind {
+    TYPE_NONE,
     TYPE_INT,
-    TYPE_FLOAT,
-    TYPE_BOOL,
-    TYPE_ENUM,
-    TYPE_STRUCT,
-    TYPE_UNION,
     TYPE_PTR,
-    TYPE_ARRAY,
-    TYPE_FUNC,
-};
+    TYPE_STRUCT,
+} TypeKind;
 
-typedef struct Type {
-    TypeKind kind;
-    union {
-        struct {
-            Type *base;
-        } ptr;
-        struct {
-            Type *base;
-            size_t size;
-        } array;
-        struct {
-            TypeField *fields;
-            size_t num_fields;
-        } aggregate;
-        struct {
-            TypeField *params;
-            Type *ret;
-        } func;
-    };
-} Type;
+Type *type_alloc(TypeKind);
+
+typedef enum TypeState {
+    TYPE_UNRESOLVED,
+    TYPE_RESOLVING,
+    TYPE_RESOLVED,
+} TypeState;
 
 typedef struct TypeField {
     const char *name;
     Type *type;
 } TypeField;
 
-Type *type_int();
-Type *type_float();
-Type *type_ptr(Type *base);
-Type *type_array(Type *base, size_t size);
-Type *type_struct(TypeField *fields, size_t num_fields);
-Type *type_union(TypeField *fields, size_t num_fields);
-Type *type_func(TypeField *params, size_t num_params, Type *ret_type);
+typedef struct Type {
+    TypeKind kind;
+    TypeState state;
+    union {
+        Type *base_type;
+        const char *name;
+        struct {
+            Type *elem;
+        } ptr;
+        struct {
+            TypeField *fields;
+            size_t num_fields;
+        } aggregate;
+    };
+} Type;
 
-typedef enum SymState {
-    STATE_UNRESOLVED = 0,
-    STATE_RESOLVING,
-    STATE_RESOLVED,
-} SymState;
+Type *type_int = &(Type){TYPE_INT};
 
-typedef struct Sym {
-    const char *name;
-    SymState state;
-    Decl *decl;
-    Entity *ent;
-} Sym;
+Sym *syms;
+Decl **ordered_decls;
 
-Sym *sym_list;
+// CachedPtrTypes;
+
+void create_global_decl() {
+    const char *name_int = str_intern("int");
+    buf_push(syms, (Sym){.name = name_int, .state = SYM_RESOLVED, .type = type_int});
+}
 
 Sym *sym_get(const char *name) {
-    for (Sym *s = sym_list; s != buf_end(sym_list); s++) {
-        if (s->name == name) {
-            return s;
+    for (Sym *sym = syms; sym != buf_end(syms); sym++) {
+        if (sym->name == name) {
+            return sym;
         }
     }
 
     return NULL;
 }
 
-void sym_put(Decl *decl) {
-    assert(decl->name);
-    assert(!sym_get(decl->name));
-    buf_push(sym_list, (Sym){decl->name, STATE_UNRESOLVED, decl});
-}
-
-void resolve_expr(Expr *expr) {
-    if (!expr) {
-        return;
+void install_decls(Decl *decl) {
+    if (sym_get(decl->name) != NULL) {
+        fatal("symbol already exists");
     }
-}
 
-void resolve_type(Typespec *type) {
-    if (!type) {
-        return;
-    }
-}
+    Type *type_aggregate;
 
-void resolve_decl(Decl *decl) {
     switch (decl->kind) {
     case DECL_VAR:
-        resolve_type(decl->var_decl.type);
-        resolve_expr(decl->var_decl.expr);
+        buf_push(syms,
+                 (Sym){.name = decl->name, .kind = SYM_VAR, .decl = decl, .state = SYM_UNRESOLVED});
         break;
-    case DECL_CONST:
-        ConstEntity *const_ent = resolve_const_expr(decl->const_decl.expr);
+    case DECL_AGGREGATE:
+        type_aggregate = type_alloc(TYPE_STRUCT);
+        type_aggregate->state = TYPE_UNRESOLVED;
+        type_aggregate->name = decl->name;
+
+        buf_push(syms, (Sym){.name = decl->name,
+                             .kind = SYM_TYPE,
+                             .decl = decl,
+                             .state = SYM_UNRESOLVED,
+                             .type = type_aggregate});
         break;
-    case DECL_STRUCT:
-        for (int i = 0; i < decl->aggregate_decl.num_items; i++) {
-            resolve_type(decl->aggregate_decl.items[i].type);
+    }
+}
+
+void order_decl(Decl *decl) {
+    Sym *sym;
+
+    if ((sym = sym_get(decl->name)) == NULL) {
+        fatal("symbol %s does not exist", decl->name);
+        return;
+    }
+
+    if (sym->state == SYM_RESOLVING) {
+        fatal("illegal value cycle in types");
+    }
+
+    if (sym->state == SYM_RESOLVED) {
+        return;
+    }
+
+    sym->state = SYM_RESOLVING;
+
+    // resolve the dependencies of this decl
+    {
+        switch (decl->kind) {
+        case DECL_VAR:
+            order_typespec(decl->var_decl.type);
+            order_expr(decl->var_decl.expr);
+            break;
+        case DECL_AGGREGATE:
+            for (int i = 0; i < decl->aggregate_decl.num_items; i++) {
+                order_typespec(decl->aggregate_decl.items[i].type);
+            }
+            break;
+        case DECL_TYPEDEF:
+            order_typespec(decl->typedef_decl.type);
+            break;
+        }
+    }
+
+    buf_push(ordered_decls, sym->decl);
+    sym->state = SYM_RESOLVED;
+}
+
+void order_expr(Expr *expr) {
+    return;
+}
+
+void order_typespec(Typespec *type) {
+    Sym *sym = NULL;
+
+    if (type == NULL) {
+        return;
+    }
+
+    switch (type->kind) {
+    case TYPESPEC_NAME:
+        sym = sym_get(type->name);
+        if (sym == NULL) {
+            fatal("symbol %s does not exist", type->name);
+            return;
+        }
+        break;
+    case TYPESPEC_PTR:
+        order_typespec(type->ptr.type);
+        break;
+    }
+}
+
+Type **cached_ptr_types;
+
+Type *type_alloc(TypeKind kind) {
+    Type *type = xcalloc(sizeof(Type));
+    type->kind = kind;
+    return type;
+}
+
+Type *type_ptr(Type *type) {
+    for (int i = 0; i < buf_len(cached_ptr_types); i++) {
+        if (cached_ptr_types[i]->ptr.elem == type) {
+            return cached_ptr_types[i];
+        }
+    }
+
+    Type *type_ptr = type_alloc(TYPE_PTR);
+    type_ptr->ptr.elem = type;
+    buf_push(cached_ptr_types, type_ptr);
+}
+
+Type *create_type(Typespec *type) {
+
+    switch (type->kind) {
+    case TYPESPEC_PTR:
+        return type_ptr(create_type(type->ptr.type));
+    case TYPESPEC_NAME:
+        return sym_get(type->name)->type;
+    }
+
+    return NULL;
+}
+
+void complete_type(Type *type) {
+    TypeField *fields = NULL;
+    size_t num_fields = 0;
+
+    if (type->kind == TYPE_STRUCT) {
+        if (type->state == TYPE_RESOLVED) {
+            return;
         }
 
-    case DECL_UNION:
-    case DECL_TYPEDEF:
-    case DECL_FUNC:
+        if (type->state == TYPE_RESOLVING) {
+            fatal("Illegal value cycle while resolving %s\n", type->name);
+            return;
+        }
+
+        type->state = TYPE_RESOLVING;
+        Sym *sym = sym_get(type->name);
+        assert(sym);
+        AggregateDecl *aggregate_decl = &sym->decl->aggregate_decl;
+        for (int i = 0; i < aggregate_decl->num_items; i++) {
+            for (int j = 0; j < aggregate_decl->items[i].num_items; j++) {
+                Type *type = create_type(aggregate_decl->items[i].type);
+                complete_type(type);
+                buf_push(fields,
+                         (TypeField){.name = aggregate_decl->items[i].names[j], .type = type});
+            }
+        }
+        type->state = TYPE_RESOLVED;
     }
 }
-
-Sym *resolve_name(const char *name) {
-    Sym *sym = sym_get(name);
-    if (!sym) {
-        fatal("unknown name");
-        return NULL;
-    }
-    resolve_sym(sym);
-    return sym;
-}
-
-void resolve_sym(Sym *s) {
-    if (s->state == STATE_RESOLVED) {
-        return;
-    }
-
-    if (sym->state == STATE_RESOLVING) {
-        fatal("cyclic dependency");
-        return;
-    }
-
-    resolve_decl(s->decl);
-    s->state = STATE_RESOLVED;
-}
-
-Sym *resolve_syms() {
-    for (Sym *s = sym_list; s != sym_end(sym_list); s++) {
-        resolve_sym(s);
-    }
-}
-
-/* Sym *resolve_type(Type *type) { */
-/*     switch (type->kind) { */
-/*     case TYPE_NAME: */
-/*         sym_resolve(sym_get(type->name)); */
-/*         break; */
-/*     } */
-/* } */
-
-/* void sym_resolve(Sym *sym) { */
-/*     switch (decl->kind) { */
-/*     case DECL_VAR: */
-
-/*         break; */
-/*     case DECL_CONST: */
-/*     case DECL_STRUCT: */
-/*     case DECL_UNION: */
-/*     case DECL_TYPEDEF: */
-/*     case DECL_FUNC: */
-/*     } */
-/*     sym->state = STATE_RESOLVED; */
-/* } */
 
 void resolve_test() {
-    const char *name = str_intern("foo");
-    assert(sym_get("foo") == NULL);
-    Decl *decl = decl_const(name, expr_int(0));
-    sym_put(decl);
-    assert(decl == sym_get(name)->decl);
+    const char *decl[] = {
+        "var i:int",
+        "var j:int",
+        "var k:int*",
+        "var m:int*",
+        "var q:S*",
+        "struct S {t : T*;}",
+        "struct T {i:int; s : S*;}",
+    };
+
+    create_global_decl();
+    for (int i = 0; i < sizeof(decl) / sizeof(*decl); i++) {
+        init_stream(decl[i]);
+        Decl *d = parse_decl_opt();
+        install_decls(d);
+    }
+
+    for (Sym *sym = syms; sym != buf_end(syms); sym++) {
+        if (sym->decl) {
+            order_decl(sym->decl);
+        }
+    }
+
+    for (Sym *sym = syms; sym != buf_end(syms); sym++) {
+        if (sym->type) {
+            complete_type(sym->type);
+        }
+    }
+
+    for (Decl **decl = ordered_decls; decl != buf_end(ordered_decls); decl++) {
+        print_decl(*decl);
+        printf("\n");
+    }
 }
-
-/*
-  var d :T
-
-  typedef T = struct S
-
-  struct s {
-  }
- */

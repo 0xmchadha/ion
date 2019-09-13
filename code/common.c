@@ -39,6 +39,17 @@ void *xrealloc(void *ptr, size_t num_bytes) {
     return ptr;
 }
 
+void *xcalloc(size_t num_bytes) {
+    void *ptr = calloc(1, num_bytes);
+
+    if (!ptr) {
+        perror("calloc failed\n");
+        exit(1);
+    }
+
+    return ptr;
+}
+
 void *buf_grow(void *_buf, int elem_size) {
     struct BufHdr *buf;
     if (!_buf) {
