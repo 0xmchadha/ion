@@ -3,6 +3,7 @@ typedef struct Type Type;
 void order_expr(Expr *expr);
 void order_decl(Decl *decl);
 void order_typespec(Typespec *);
+Type *create_type(Typespec *type);
 
 typedef enum {
     SYM_UNRESOLVED,
@@ -33,6 +34,7 @@ typedef enum TypeKind {
     TYPE_INT,
     TYPE_PTR,
     TYPE_STRUCT,
+    TYPE_FUNC,
 } TypeKind;
 
 Type *type_alloc(TypeKind);
@@ -61,6 +63,11 @@ typedef struct Type {
             TypeField *fields;
             size_t num_fields;
         } aggregate;
+        struct {
+            Type **args;
+            size_t num_args;
+            Type *ret_type;
+        } func;
     };
 } Type;
 
@@ -68,8 +75,6 @@ Type *type_int = &(Type){TYPE_INT};
 
 Sym *syms;
 Decl **ordered_decls;
-
-// CachedPtrTypes;
 
 void create_global_decl() {
     const char *name_int = str_intern("int");
@@ -88,12 +93,16 @@ Sym *sym_get(const char *name) {
 
 void install_decls(Decl *decl) {
     if (sym_get(decl->name) != NULL) {
-        fatal("symbol already exists");
+        fatal("symbol %s already exists", decl->name);
     }
 
     Type *type_aggregate;
 
     switch (decl->kind) {
+    case DECL_CONST:
+        buf_push(syms,
+        (Sym){.name = decl->name, .kind = SYM_CONST, .decl = decl, .state = SYM_UNRESOLVED});
+        break;
     case DECL_VAR:
         buf_push(syms,
                  (Sym){.name = decl->name, .kind = SYM_VAR, .decl = decl, .state = SYM_UNRESOLVED});
@@ -108,6 +117,17 @@ void install_decls(Decl *decl) {
                              .decl = decl,
                              .state = SYM_UNRESOLVED,
                              .type = type_aggregate});
+        break;
+    case DECL_FUNC:
+        buf_push(
+            syms,
+            (Sym){.name = decl->name, .kind = SYM_FUNC, .decl = decl, .state = SYM_UNRESOLVED});
+        break;
+
+    case DECL_TYPEDEF:
+        buf_push(
+            syms,
+            (Sym){.name = decl->name, .kind = SYM_TYPE, .decl = decl, .state = SYM_UNRESOLVED});
         break;
     }
 }
@@ -133,6 +153,9 @@ void order_decl(Decl *decl) {
     // resolve the dependencies of this decl
     {
         switch (decl->kind) {
+        case DECL_CONST:
+            order_expr(decl->const_decl.expr);
+            break;
         case DECL_VAR:
             order_typespec(decl->var_decl.type);
             order_expr(decl->var_decl.expr);
@@ -142,9 +165,22 @@ void order_decl(Decl *decl) {
                 order_typespec(decl->aggregate_decl.items[i].type);
             }
             break;
+        case DECL_FUNC:
+            for (int i = 0; i < decl->func_decl.num_func_args; i++) {
+                order_typespec(decl->func_decl.args[i].type);
+            }
+
+            order_typespec(decl->func_decl.type);
+
+            for (int i = 0; i < decl->func_decl.block.num_stmts; i++) {
+                // TODO: Order statements code comes here
+            }
+
+            break;
+
         case DECL_TYPEDEF:
             order_typespec(decl->typedef_decl.type);
-            break;
+            sym->type = create_type(decl->typedef_decl.type);
         }
     }
 
@@ -174,10 +210,21 @@ void order_typespec(Typespec *type) {
     case TYPESPEC_PTR:
         order_typespec(type->ptr.type);
         break;
+
+    case TYPESPEC_FUNC:
+        for (int i = 0; i < type->func.num_args; i++) {
+            order_typespec(type->func.args[i]);
+        }
+        order_typespec(type->func.ret);
     }
 }
 
-Type **cached_ptr_types;
+typedef struct CachedPtrTypes {
+    Type *elem;
+    Type *ptr;
+} CachedPtrTypes;
+
+CachedPtrTypes *cached_ptr_types;
 
 Type *type_alloc(TypeKind kind) {
     Type *type = xcalloc(sizeof(Type));
@@ -185,16 +232,56 @@ Type *type_alloc(TypeKind kind) {
     return type;
 }
 
-Type *type_ptr(Type *type) {
+Type *type_ptr(Type *elem) {
     for (int i = 0; i < buf_len(cached_ptr_types); i++) {
-        if (cached_ptr_types[i]->ptr.elem == type) {
-            return cached_ptr_types[i];
+        if (cached_ptr_types[i].elem == elem) {
+            return cached_ptr_types[i].ptr;
         }
     }
 
-    Type *type_ptr = type_alloc(TYPE_PTR);
-    type_ptr->ptr.elem = type;
-    buf_push(cached_ptr_types, type_ptr);
+    Type *ptr = type_alloc(TYPE_PTR);
+    ptr->ptr.elem = elem;
+    buf_push(cached_ptr_types, (CachedPtrTypes){elem, ptr});
+}
+
+typedef struct CachedFuncType {
+    struct {
+        Type **args;
+        size_t num_args;
+        Type *ret_type;
+    };
+    Type *type;
+} CachedFuncType;
+
+CachedFuncType *cached_func_types;
+
+Type *type_func(Type **args, size_t num_args, Type *ret_type) {
+    for (int i = 0; i < buf_len(cached_func_types); i++) {
+        if (num_args != cached_func_types[i].num_args) {
+            continue;
+        }
+
+        for (int j = 0; j < cached_func_types[i].num_args; j++) {
+            if (args[j] != cached_func_types[i].args[j]) {
+                goto skip;
+            }
+        }
+
+        if (cached_func_types[i].ret_type == ret_type) {
+            return cached_func_types[i].type;
+        }
+
+    skip:;
+    }
+
+    Type *type = type_alloc(TYPE_FUNC);
+    type->func.args = args;
+    type->func.num_args = num_args;
+    type->func.ret_type = ret_type;
+
+    buf_push(cached_func_types, (CachedFuncType){args, num_args, ret_type, type});
+
+    return type;
 }
 
 Type *create_type(Typespec *type) {
@@ -204,6 +291,14 @@ Type *create_type(Typespec *type) {
         return type_ptr(create_type(type->ptr.type));
     case TYPESPEC_NAME:
         return sym_get(type->name)->type;
+    case TYPESPEC_FUNC: {
+        Type **func_args = NULL;
+        for (int i = 0; i < type->func.num_args; i++) {
+            buf_push(func_args, create_type(type->func.args[i]));
+        }
+        Type *ret_type = create_type(type->func.ret);
+        return type_func(func_args, buf_len(func_args), ret_type);
+    }
     }
 
     return NULL;
@@ -233,8 +328,11 @@ void complete_type(Type *type) {
                 complete_type(type);
                 buf_push(fields,
                          (TypeField){.name = aggregate_decl->items[i].names[j], .type = type});
+                num_fields++;
             }
         }
+        type->aggregate.fields = fields;
+        type->aggregate.num_fields = num_fields;
         type->state = TYPE_RESOLVED;
     }
 }
@@ -248,6 +346,10 @@ void resolve_test() {
         "var q:S*",
         "struct S {t : T*;}",
         "struct T {i:int; s : S*;}",
+        "func hello(i :int, j:int):int {}",
+        "typedef D = func(int,int):int",
+        "typedef E = S*",
+        "const o = 1+2",
     };
 
     create_global_decl();
