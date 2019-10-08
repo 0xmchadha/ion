@@ -99,7 +99,33 @@ Expr *expr_name(const char *name) {
     return expr;
 }
 
-Expr *expr_compound(Typespec *type, Expr **args, size_t num_args) {
+CompoundVal *compound_new(CompoundValKind kind) {
+    CompoundVal *new = arena_alloc(&ast_arena, sizeof(CompoundVal));
+    new->kind = kind;
+    return new;
+}
+
+CompoundVal *compound_simple(Expr *expr) {
+    CompoundVal *compound_simple = compound_new(SIMPLE_EXPR);
+    compound_simple->expr = expr;
+    return compound_simple;
+}
+
+CompoundVal *compound_index(Expr *index, Expr *val) {
+    CompoundVal *compound_index = compound_new(INDEX_EXPR);
+    compound_index->index.index = index;
+    compound_index->index.val = val;
+    return compound_index;
+}
+
+CompoundVal *compound_name(const char *name, Expr *val) {
+    CompoundVal *compound_name = compound_new(NAME_EXPR);
+    compound_name->name.name = name;
+    compound_name->name.val = val;
+    return compound_name;
+}
+
+Expr *expr_compound(Typespec *type, CompoundVal **args, size_t num_args) {
     Expr *expr = expr_new(EXPR_COMPOUND);
     expr->compound_expr.type = type;
     expr->compound_expr.args = AST_DUP(args);
@@ -116,6 +142,13 @@ Expr *expr_sizeof_type(Typespec *type) {
 Expr *expr_sizeof_expr(Expr *sizeof_expr) {
     Expr *expr = expr_new(EXPR_SIZEOF_EXPR);
     expr->sizeof_expr = sizeof_expr;
+    return expr;
+}
+
+Expr *expr_cast(Typespec *type, Expr *e) {
+    Expr *expr = expr_new(EXPR_CAST);
+    expr->cast_expr.type = type;
+    expr->cast_expr.expr = e;
     return expr;
 }
 

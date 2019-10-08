@@ -38,9 +38,9 @@ void print_typespec(Typespec *type) {
         printf(")");
         break;
     case TYPESPEC_PTR:
-			printf("(ptr ");
-			print_typespec(type->ptr.type);
-			printf(")");
+        printf("(ptr ");
+        print_typespec(type->ptr.type);
+        printf(")");
         break;
     }
 }
@@ -120,10 +120,29 @@ void print_expr(Expr *expr) {
         } else {
             printf("nil");
         }
-        for (Expr **args = expr->compound_expr.args;
+        for (CompoundVal **args = expr->compound_expr.args;
              args != expr->compound_expr.args + expr->compound_expr.num_args; args++) {
             printf(" ");
-            print_expr(*args);
+            switch ((*args)->kind) {
+            case SIMPLE_EXPR:
+                print_expr((*args)->expr);
+                break;
+            case INDEX_EXPR:
+                printf("(index ");
+                print_expr((*args)->index.index);
+                printf(" ");
+                print_expr((*args)->index.val);
+                printf(")");
+                break;
+            case NAME_EXPR:
+                printf("(name ");
+                printf("%s ", (*args)->name.name);
+                print_expr((*args)->name.val);
+                printf(")");
+                break;
+            default:
+                assert(0);
+            }
         }
         printf(")");
         break;
@@ -372,6 +391,8 @@ void print_decl_test() {
         "var foo = \"hello world\"",
         "var foo  = 1+2",
         "const foo = 10",
+        "var bar1 = ~5",
+        "var bar2 = !5",
         "struct Vector { x,y : float; z,a,c :int;}",
         "union Vector { x,y : float; f:float;}",
         "func bar(i :int) {printf(\"\");}",
@@ -388,12 +409,14 @@ void print_decl_test() {
         "const pi = 3.14",
         "var v = Vector{1.0, -1.0}",
         "var v :Vector = {1.0, -1.0}",
+        "var n = v.a.b",
         "typedef Vectors = Vector[1+2]",
         "func f() { do { print(42); } while (1); }",
         "typedef T = (func(int):int)[16]",
         "func f() { enum E {A,B,C} return; }",
         "func f() { if (1) { return 1;} else if (2) {return 2;} else {return 3;}}",
-		"typedef cmplx = int***[16]",
+        "typedef cmplx = int***[16]",
+        "var vs = Vector[2]{[0] = 1, 2}",
     };
 
     for (size_t i = 0; i < sizeof(decl) / sizeof(*decl); i++) {

@@ -194,6 +194,27 @@ typedef enum ExprKind {
     EXPR_TERNARY,
 } ExprKind;
 
+typedef enum CompoundValKind {
+    SIMPLE_EXPR,
+    INDEX_EXPR,
+    NAME_EXPR,
+} CompoundValKind;
+
+typedef struct CompoundVal {
+    CompoundValKind kind;
+    union {
+        Expr *expr;
+        struct {
+            Expr *index;
+            Expr *val;
+        } index;
+        struct {
+            const char *name;
+            Expr *val;
+        } name;
+    };
+} CompoundVal;
+
 typedef struct Expr {
     ExprKind kind;
     union {
@@ -220,7 +241,7 @@ typedef struct Expr {
 
         struct {
             Typespec *type;
-            Expr **args;
+            CompoundVal **args;
             size_t num_args;
         } compound_expr;
 

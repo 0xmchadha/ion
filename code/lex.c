@@ -17,6 +17,7 @@ const char *keyword_for;
 const char *keyword_do;
 const char *keyword_switch;
 const char *keyword_case;
+const char *keyword_cast;
 const char *keyword_default;
 
 const char *first_keyword;
@@ -40,6 +41,7 @@ void init_keywords() {
     KEYWORD(const);
     KEYWORD(var);
     KEYWORD(func);
+    KEYWORD(cast);
     KEYWORD(sizeof);
     KEYWORD(break);
     KEYWORD(continue);
@@ -52,7 +54,6 @@ void init_keywords() {
 	KEYWORD(switch);
 	KEYWORD(case);
 	KEYWORD(default);
-	
 	assert(str_arena.end == arena_end);
 
 	first_keyword = keyword_typedef;
@@ -84,6 +85,8 @@ typedef enum TokenKind {
     TOKEN_FLOAT,
     TOKEN_STR,
     TOKEN_NAME,
+    TOKEN_NEG,
+    TOKEN_NOT,
     TOKEN_MUL,
     // token mul precedence
     TOKEN_FIRST_MUL = TOKEN_MUL,
@@ -100,6 +103,7 @@ typedef enum TokenKind {
     TOKEN_OR,
     TOKEN_XOR,
     TOKEN_LAST_ADD = TOKEN_XOR,
+    
     // token eq precedence
     TOKEN_EQ,
     TOKEN_FIRST_EQ = TOKEN_EQ,
@@ -155,6 +159,8 @@ const char *token_to_str[] = {
     [TOKEN_COMMA] = ",",
     [TOKEN_DOT] = ".",
     [TOKEN_SEMICOLON] = ";",
+    [TOKEN_NEG] = "~",
+    [TOKEN_NOT] = "!",
     [TOKEN_MUL] = "*",
     [TOKEN_DIV] = "/",
     [TOKEN_MOD] = "%",
@@ -526,6 +532,8 @@ repeat:
         CASE1(',', TOKEN_COMMA);
         CASE1(';', TOKEN_SEMICOLON);
         CASE1('?', TOKEN_QUESTION);
+        CASE1('~', TOKEN_NEG);
+        CASE1('!', TOKEN_NOT);
 
 #undef CASE1
 

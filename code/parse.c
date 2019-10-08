@@ -162,15 +162,44 @@ Decl *parse_decl() {
     return decl;
 }
 
+CompoundVal *parse_compound_val() {
+    if (match_token(TOKEN_LBRACKETS)) {
+        Expr *index = parse_expr();
+        expect_token(TOKEN_RBRACKETS);
+        expect_token(TOKEN_ASSIGN);
+        Expr *val = parse_expr();
+        return compound_index(index, val);
+    }
+
+    Expr *expr = parse_expr();
+    if (match_token(TOKEN_ASSIGN)) {
+        if (expr->kind != EXPR_NAME) {
+            syntax_error("Inside Compound literals value can be assigned to named fields only");
+        }
+        Expr *val = parse_expr();
+        return compound_name(expr->name, val);
+    }
+
+    return compound_simple(expr);
+}
+
+/* struct Vector { */
+/*      a:int; */
+/*      b:int; */
+/* } 
+/* var a = Vector{b=10} 
+/*  
+/* var b = int[256] = {1,2,3,['a']=50, 100}
+*/
 Expr *parse_expr_compound(Typespec *type) {
-    Expr **args = NULL;
+    CompoundVal **args = NULL;
     expect_token(TOKEN_LBRACES);
     if (!is_token(TOKEN_RBRACES)) {
-        buf_push(args, parse_expr());
+        buf_push(args, parse_compound_val());
     }
 
     while (match_token(TOKEN_COMMA)) {
-        buf_push(args, parse_expr());
+        buf_push(args, parse_compound_val());
     }
     expect_token(TOKEN_RBRACES);
     return expr_compound(type, args, buf_len(args));
@@ -200,6 +229,13 @@ Expr *parse_simple_expr() {
             expect_token(TOKEN_RPAREN);
             return expr_sizeof_expr(expr);
         }
+    } else if (match_keyword(keyword_cast)) {
+        expect_token(TOKEN_LPAREN);
+        Typespec *type = parse_type();
+        expect_token(TOKEN_COMMA);
+        Expr *expr = parse_expr();
+        expect_token(TOKEN_RPAREN);
+        return expr_cast(type, expr);
     } else if (is_token(TOKEN_NAME)) {
         const char *name = parse_name();
         if (is_token(TOKEN_LBRACES)) {
@@ -275,7 +311,8 @@ Expr *parse_expr_misc() {
 
 bool is_unary_op() {
     // +,-,*,&
-    return is_token(TOKEN_ADD) || is_token(TOKEN_SUB) || is_token(TOKEN_MUL) || is_token(TOKEN_AND);
+    return is_token(TOKEN_ADD) || is_token(TOKEN_SUB) || is_token(TOKEN_MUL) ||
+           is_token(TOKEN_AND) || is_token(TOKEN_NEG) || is_token(TOKEN_NOT);
 }
 
 Expr *parse_expr_unary() {
@@ -504,7 +541,7 @@ Stmt *parse_stmt_if() {
             break;
         }
     }
-	
+
     return stmt_if(expr, if_block, else_ifs, buf_len(else_ifs), else_block);
 }
 
