@@ -47,11 +47,6 @@ typedef struct StmtWhile {
     StmtBlock block;
 } StmtWhile;
 
-typedef struct StmtDoWhile {
-    StmtBlock block;
-    Expr *expr;
-} StmtDoWhile;
-
 typedef struct StmtFor {
     Stmt *init;
     Expr *cond;
@@ -60,11 +55,11 @@ typedef struct StmtFor {
 } StmtFor;
 
 typedef struct SwitchCase {
-    Expr *expr;
+    Expr **expr;
+    size_t num_exprs;
     bool is_default;
-    Stmt **stmts;
-    size_t num_stmts;
-} SwitchCase;
+    StmtBlock block;
+}SwitchCase;
 
 typedef struct StmtSwitch {
     Expr *expr;
@@ -90,7 +85,6 @@ typedef struct Stmt {
         StmtReturn stmt_return;
         StmtIf stmt_if;
         StmtWhile stmt_while;
-        StmtDoWhile stmt_do_while;
         StmtFor stmt_for;
         StmtSwitch stmt_switch;
         StmtAssign stmt_assign;

@@ -1,6 +1,7 @@
 typedef struct Type Type;
+typedef struct Sym Sym;
 
-void order_decl(Decl *decl);
+void resolve_sym(Sym *sym);
 Type *create_type(Typespec *type);
 void complete_type(Type *type);
 typedef enum {
@@ -85,7 +86,7 @@ const size_t PTR_SIZE = 8;
 const size_t PTR_ALIGNMENT = 8;
 
 Decl **ordered_decls;
-Sym *syms;
+Sym *global_syms;
 
 typedef struct ResolvedExpr {
     Type *type;
@@ -99,24 +100,18 @@ typedef struct ResolvedExpr {
 ResolvedExpr resolve_expr(Expr *expr);
 ResolvedExpr resolve_expected_expr(Expr *expr, Type *expected_type);
 Type *type_func(Type **args, size_t num_args, Type *ret_type);
+Sym *sym_get(const char *name);
+void resolve_stmt(Stmt *stmt, Type *expected_type, Sym *scope_start);
 
 void create_global_decl() {
-    const char *name_int = str_intern("int");
-    const char *name_void = str_intern("void");
-    buf_push(syms,
-             (Sym){.name = name_int, .state = SYM_RESOLVED, .kind = SYM_TYPE, .type = type_int});
-    buf_push(syms,
-             (Sym){.name = name_void, .state = SYM_RESOLVED, .kind = SYM_TYPE, .type = type_void});
-}
-
-Sym *sym_get(const char *name) {
-    for (Sym *sym = syms; sym != buf_end(syms); sym++) {
-        if (sym->name == name) {
-            return sym;
-        }
-    }
-
-    return NULL;
+    buf_push(global_syms, (Sym){.name = str_intern("int"),
+                                .state = SYM_RESOLVED,
+                                .kind = SYM_TYPE,
+                                .type = type_int});
+    buf_push(global_syms, (Sym){.name = str_intern("void"),
+                                .state = SYM_RESOLVED,
+                                .kind = SYM_TYPE,
+                                .type = type_void});
 }
 
 void install_decls(Decl *decl) {
@@ -129,11 +124,11 @@ void install_decls(Decl *decl) {
     switch (decl->kind) {
     case DECL_CONST:
         buf_push(
-            syms,
+            global_syms,
             (Sym){.name = decl->name, .kind = SYM_CONST, .decl = decl, .state = SYM_UNRESOLVED});
         break;
     case DECL_VAR:
-        buf_push(syms,
+        buf_push(global_syms,
                  (Sym){.name = decl->name, .kind = SYM_VAR, .decl = decl, .state = SYM_UNRESOLVED});
         break;
     case DECL_AGGREGATE:
@@ -142,21 +137,21 @@ void install_decls(Decl *decl) {
         type_aggregate->state = TYPE_UNRESOLVED;
         type_aggregate->name = decl->name;
 
-        buf_push(syms, (Sym){.name = decl->name,
-                             .kind = SYM_TYPE,
-                             .decl = decl,
-                             .state = SYM_UNRESOLVED,
-                             .type = type_aggregate});
+        buf_push(global_syms, (Sym){.name = decl->name,
+                                    .kind = SYM_TYPE,
+                                    .decl = decl,
+                                    .state = SYM_UNRESOLVED,
+                                    .type = type_aggregate});
         break;
     case DECL_FUNC:
         buf_push(
-            syms,
+            global_syms,
             (Sym){.name = decl->name, .kind = SYM_FUNC, .decl = decl, .state = SYM_UNRESOLVED});
         break;
 
     case DECL_TYPEDEF:
         buf_push(
-            syms,
+            global_syms,
             (Sym){.name = decl->name, .kind = SYM_TYPE, .decl = decl, .state = SYM_UNRESOLVED});
         break;
     }
@@ -242,7 +237,7 @@ Type *type_func(Type **args, size_t num_args, Type *ret_type) {
 Type *create_type(Typespec *type) {
 
     if (type == NULL) {
-        return NULL;
+        return type_void;
     }
 
     switch (type->kind) {
@@ -284,7 +279,7 @@ Type *create_type(Typespec *type) {
     return NULL;
 }
 
-#define MAX(a,b) (((a)>(b)) ? (a) : (b))
+#define MAX(a, b) (((a) > (b)) ? (a) : (b))
 
 void complete_type(Type *type) {
     TypeField *fields = NULL;
@@ -431,7 +426,8 @@ ResolvedExpr resolve_name_expr(Expr *expr) {
     if (!sym) {
         fatal("Expected sym %s to exist", expr->name);
     }
-    order_decl(sym->decl);
+
+    resolve_sym(sym);
     if (sym->kind == SYM_VAR) {
         return lvalue_expr(sym->type);
     } else if (sym->kind == SYM_CONST) {
@@ -553,11 +549,24 @@ size_t get_index_field(Type *type, const char *name) {
     fatal("Named field does not exist in the type");
 }
 
+/* This is the trickiest of them all. In ion compound expressions can have */
+/* inferred types ie in a func returning struct foo{i,j:int;}. A return expression */
+/* {1,2} is automatically inferred to have type struct foo */
+
 ResolvedExpr resolve_compound_expr(Expr *expr, Type *expected_type) {
     Type *compound_expr_type = create_type(expr->compound_expr.type);
-    expected_type = (expected_type) ? expected_type : compound_expr_type;
-    if (!expected_type) {
-        fatal("compound expression requires an expected type");
+
+    // If both types are not void then they should match
+    if (expected_type != compound_expr_type && expected_type != type_void &&
+        compound_expr_type != type_void) {
+        fatal("compound expression type and expected type do not match");
+    }
+
+    // Take the type that is not void
+    expected_type = (expected_type != type_void) ? expected_type : compound_expr_type;
+
+    if (expected_type == type_void) {
+        fatal("compound expression type can not be void");
     }
 
     complete_type(expected_type);
@@ -707,7 +716,7 @@ ResolvedExpr resolve_sizeof_expr(Expr *expr) {
 
 ResolvedExpr resolve_expected_expr(Expr *expr, Type *expected_type) {
     if (!expr) {
-        return (ResolvedExpr){};
+        return (ResolvedExpr){.type = type_void};
     }
 
     switch (expr->kind) {
@@ -742,7 +751,7 @@ ResolvedExpr resolve_expected_expr(Expr *expr, Type *expected_type) {
 }
 
 ResolvedExpr resolve_expr(Expr *expr) {
-    return resolve_expected_expr(expr, NULL);
+    return resolve_expected_expr(expr, type_void);
 }
 
 Type *order_decl_var(Decl *decl) {
@@ -750,11 +759,15 @@ Type *order_decl_var(Decl *decl) {
 
     if (decl->var_decl.expr) {
         ResolvedExpr expr = resolve_expected_expr(decl->var_decl.expr, type);
-        if (type != NULL && type != expr.type) {
+        if (type != type_void && type != expr.type) {
             fatal("expression type and var type do not match for %s", decl->name);
         }
 
         type = expr.type;
+    }
+
+    if (type == type_void) {
+        fatal("%s var declared as void. This is illegal", decl->name);
     }
 
     complete_type(type);
@@ -770,20 +783,15 @@ Type *order_decl_const(Decl *decl, int64_t *val) {
     return resolved_expr.type;
 }
 
-void order_decl(Decl *decl) {
-    Sym *sym;
-
-    if ((sym = sym_get(decl->name)) == NULL) {
-        fatal("symbol %s does not exist", decl->name);
+void resolve_sym(Sym *sym) {
+    if (sym->state == SYM_RESOLVED) {
         return;
     }
+
+    Decl *decl = sym->decl;
 
     if (sym->state == SYM_RESOLVING) {
         fatal("illegal value cycle in types");
-    }
-
-    if (sym->state == SYM_RESOLVED) {
-        return;
     }
 
     sym->state = SYM_RESOLVING;
@@ -806,11 +814,6 @@ void order_decl(Decl *decl) {
         }
         Type *ret_type = create_type(decl->func_decl.type);
         sym->type = type_func(func_args, buf_len(func_args), ret_type);
-
-        for (int i = 0; i < decl->func_decl.block.num_stmts; i++) {
-            // TODO: Order statements code comes here
-        }
-
         break;
     }
     case DECL_TYPEDEF:
@@ -821,8 +824,207 @@ void order_decl(Decl *decl) {
     sym->state = SYM_RESOLVED;
 }
 
+enum {
+    MAX_LOCAL_SYMS = 1024,
+};
+
+Sym local_symbol_table[MAX_LOCAL_SYMS];
+Sym *local_syms = local_symbol_table;
+Sym *local_sym_end = &local_symbol_table[MAX_LOCAL_SYMS - 1];
+
+Sym *scope_enter() {
+    return local_syms;
+}
+
+void scope_leave(Sym *sym) {
+    local_syms = sym;
+}
+
+void sym_push_var(const char *name, Type *type, Sym *scope_start) {
+    if (local_syms == local_sym_end) {
+        fatal("Too many local syms");
+    }
+
+    for (Sym *it = local_syms; it > scope_start; it--) {
+        if (it[-1].name == name) {
+            fatal("Symbol %s redeclared", name);
+        }
+    }
+
+    *local_syms++ = (Sym){.name = name, .kind = SYM_VAR, .state = SYM_RESOLVED, .type = type};
+}
+
+Sym *sym_get(const char *name) {
+    for (Sym *it = local_syms; it > local_symbol_table; it--) {
+        if (it[-1].name == name) {
+            return &it[-1];
+        }
+    }
+
+    for (Sym *sym = global_syms; sym != buf_end(global_syms); sym++) {
+        if (sym->name == name) {
+            return sym;
+        }
+    }
+
+    return NULL;
+}
+
+void resolve_stmtblock(StmtBlock block, Type *expected_type, Sym *scope_start) {
+    for (int i = 0; i < block.num_stmts; i++) {
+        resolve_stmt(block.stmts[i], expected_type, scope_start);
+    }
+}
+
+void resolve_cond_expr(Expr *expr) {
+    ResolvedExpr cond_expr = resolve_expr(expr);
+    if (cond_expr.type->kind != TYPE_INT) {
+        fatal("If expression should be of type int");
+    }
+}
+
+void resolve_stmt(Stmt *stmt, Type *expected_type, Sym *scope_start) {
+    switch (stmt->kind) {
+    case STMT_NONE:
+        assert(0);
+
+    case STMT_DECL:
+        break;
+
+    case STMT_RETURN: {
+        ResolvedExpr expr = resolve_expected_expr(stmt->stmt_return.expr, expected_type);
+        if (expr.type != expected_type) {
+            fatal("Return type of func doesn't match the function signature");
+        }
+        break;
+    }
+    case STMT_BREAK:
+    case STMT_CONTINUE:
+        break;
+    case STMT_BLOCK: {
+        Sym *scope_start = scope_enter();
+        resolve_stmtblock(stmt->block, expected_type, scope_start);
+        scope_leave(scope_start);
+        break;
+    }
+    case STMT_IF: {
+        resolve_cond_expr(stmt->stmt_if.expr);
+        Sym *scope_start = scope_enter();
+        resolve_stmtblock(stmt->stmt_if.if_block, expected_type, scope_start);
+        scope_leave(scope_start);
+        for (int i = 0; i < stmt->stmt_if.num_elseifs; i++) {
+            resolve_cond_expr(stmt->stmt_if.else_ifs[i].expr);
+            scope_start = scope_enter();
+            resolve_stmtblock(stmt->stmt_if.else_ifs[i].block, expected_type, scope_start);
+            scope_leave(scope_start);
+        }
+
+        scope_start = scope_enter();
+        resolve_stmtblock(stmt->stmt_if.else_block, expected_type, scope_start);
+        scope_leave(scope_start);
+        break;
+    }
+    case STMT_DO_WHILE:
+    case STMT_WHILE: {
+        resolve_cond_expr(stmt->stmt_while.expr);
+        Sym *scope_start = scope_enter();
+        resolve_stmtblock(stmt->stmt_while.block, expected_type, scope_start);
+        scope_leave(scope_start);
+        break;
+    }
+
+    case STMT_FOR: {
+        // outer for scope
+        Sym *scope_start_for = scope_enter();
+        resolve_stmt(stmt->stmt_for.init, NULL, scope_start_for);
+        resolve_cond_expr(stmt->stmt_for.cond);
+        resolve_stmt(stmt->stmt_for.next, NULL, scope_start_for);
+        // inner scope
+        Sym *scope_start_inner = scope_enter();
+        resolve_stmtblock(stmt->stmt_for.block, expected_type, scope_start_inner);
+        // leave inner scope
+        scope_leave(scope_start_inner);
+
+        // leave outer for scope
+        scope_leave(scope_start_for);
+        break;
+    }
+    case STMT_SWITCH: {
+        ResolvedExpr switch_expr = resolve_expr(stmt->stmt_switch.expr);
+        Sym *scope_start = scope_enter();
+        for (size_t i = 0; i < stmt->stmt_switch.num_cases; i++) {
+            for (size_t j = 0; j < stmt->stmt_switch.cases->num_exprs; j++) {
+                ResolvedExpr expr_case = resolve_expr(stmt->stmt_switch.cases->expr[j]);
+                if (expr_case.type != switch_expr.type) {
+                    fatal("switch and case expression types should match");
+                }
+            }
+
+            Sym *scope_inner = scope_enter();
+            resolve_stmtblock(stmt->stmt_switch.cases->block, expected_type, scope_inner);
+            scope_leave(scope_inner);
+        }
+        scope_leave(scope_start);
+        break;
+    }
+    case STMT_ASSIGN: {
+        ResolvedExpr left_expr = resolve_expr(stmt->stmt_assign.left_expr);
+        ResolvedExpr right_expr = resolve_expr(stmt->stmt_assign.right_expr);
+
+        if (!left_expr.is_lvalue) {
+            fatal("Can not assign value to non lvalue expression");
+        }
+
+        if (right_expr.type != type_void) {
+            if (left_expr.type != right_expr.type) {
+                fatal("Left and right expression types do not match in the assignment statement");
+            }
+        } else {
+            if (left_expr.type->kind != TYPE_INT) {
+                fatal("can only use %s with type int", token_kind_name(stmt->stmt_assign.op));
+            }
+        }
+
+        break;
+    }
+
+    case STMT_INIT: {
+        ResolvedExpr rvalue_expr = resolve_expr(stmt->stmt_init.expr);
+        sym_push_var(stmt->stmt_init.name, rvalue_expr.type, scope_start);
+        break;
+    }
+    default:
+        assert(0);
+        break;
+    }
+}
+
+void resolve_func_body(Sym *sym) {
+    assert(sym->decl->kind == DECL_FUNC);
+
+    Decl *decl = sym->decl;
+    Sym *scope_start = scope_enter();
+
+    for (size_t i = 0; i < decl->func_decl.num_func_args; i++) {
+        sym_push_var(decl->func_decl.args[i].name, create_type(decl->func_decl.args[i].type),
+                     scope_start);
+    }
+
+    resolve_stmtblock(decl->func_decl.block, create_type(decl->func_decl.type), scope_start);
+    scope_leave(scope_start);
+}
+
 void resolve_test() {
     const char *decl[] = {
+        /* // Test functions and Statements */
+        /* // check return statement matching the type */
+        "struct funcTest1 {i,j :int;}",
+        "func foo1(a :int):funcTest1 {return funcTest1{1,2};}",
+        "var Testa :int",
+        "func foo2(a :int):int {if (a) {return a;} else {return Testa;}}",
+        "func foo3():funcTest1 {return {1,2};}",
+        // Test type inference
+        "func foo4():int {i := funcTest1{1,2}; return 1;}",
         "var i:int",
         "var j:int",
         "var k:int*",
@@ -842,11 +1044,12 @@ void resolve_test() {
         "struct TestB {t: TestA;}",
         "var test :TestA",
         "var test2:TestB* = test.a",
-        // test index fields
+        /* // test index fields */
         "struct TestC {a :int[10]; b :int**;}",
         "var testc :TestC",
-        "var test3:int = testc.a[0]",
         "var test4 = testc.b[0]",
+        "var test3:int = testc.a[0]",
+
         // test call expr
         "func test_func(i:int *, j:int *):int{}",
         "var hh = test_func(&i,&j)",
@@ -895,16 +1098,21 @@ void resolve_test() {
         install_decls(d);
     }
 
-    for (Sym *sym = syms; sym != buf_end(syms); sym++) {
+    for (Sym *sym = global_syms; sym != buf_end(global_syms); sym++) {
         if (sym->decl) {
-            order_decl(sym->decl);
+            resolve_sym(sym);
         }
     }
 
-    for (Sym *sym = syms; sym != buf_end(syms); sym++) {
+    for (Sym *sym = global_syms; sym != buf_end(global_syms); sym++) {
         if (sym->type) {
             complete_type(sym->type);
-            printf("Type name = %s, size = %lu, alignment = %lu\n", sym->name, sym->type->size, sym->type->alignment);
+        }
+    }
+
+    for (Sym *sym = global_syms; sym != buf_end(global_syms); sym++) {
+        if (sym->decl && sym->decl->kind == DECL_FUNC) {
+            resolve_func_body(sym);
         }
     }
 

@@ -186,9 +186,9 @@ CompoundVal *parse_compound_val() {
 /* struct Vector { */
 /*      a:int; */
 /*      b:int; */
-/* } 
-/* var a = Vector{b=10} 
-/*  
+/* }
+/* var a = Vector{b=10}
+/*
 /* var b = int[256] = {1,2,3,['a']=50, 100}
 */
 Expr *parse_expr_compound(Typespec *type) {
@@ -594,33 +594,57 @@ Stmt *parse_stmt_while() {
 
 SwitchCase parse_switch_case() {
     bool is_default = false;
-    Expr *expr = NULL;
+    Expr **exprs = NULL;
 
-    if (match_keyword(keyword_default)) {
-        is_default = true;
-    } else if (match_keyword(keyword_case)) {
-        expr = parse_expr();
+    while (1) {
+        if (match_keyword(keyword_case)) {
+            buf_push(exprs, parse_expr());
+            expect_token(TOKEN_COLON);
+            continue;
+        }
+
+        if (match_keyword(keyword_default)) {
+            if (is_default) {
+                syntax_error("Duplicate default labels in the switch clause");
+            }
+
+            is_default = true;
+            expect_token(TOKEN_COLON);
+            continue;
+        }
+
+        break;
     }
 
-    expect_token(TOKEN_COLON);
     Stmt **stmts = NULL;
 
     while (!is_keyword(keyword_default) && !is_keyword(keyword_case) && !is_token(TOKEN_RBRACES)) {
         buf_push(stmts, parse_stmt());
     }
 
-    return (SwitchCase){expr, is_default, stmts, buf_len(stmts)};
+    return (SwitchCase){exprs, buf_len(exprs), is_default, (StmtBlock){stmts, buf_len(stmts)}};
 }
 
 Stmt *parse_stmt_switch() {
     Expr *expr = parse_expr();
     SwitchCase *cases = NULL;
+    bool is_default = false;
+
     expect_token(TOKEN_LBRACES);
+
     while (is_keyword(keyword_case) || is_keyword(keyword_default)) {
+        if (is_keyword(keyword_default)) {
+            if (is_default) {
+                syntax_error("Duplicate default labels in the switch clause");
+            } else {
+                is_default = true;
+            }
+        }
+        
         buf_push(cases, parse_switch_case());
     }
-    expect_token(TOKEN_RBRACES);
 
+    expect_token(TOKEN_RBRACES);
     return stmt_switch(expr, cases, buf_len(cases));
 }
 

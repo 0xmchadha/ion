@@ -276,8 +276,8 @@ Stmt *stmt_while(Expr *expr, StmtBlock block) {
 
 Stmt *stmt_do_while(StmtBlock block, Expr *expr) {
     Stmt *stmt = stmt_new(STMT_DO_WHILE);
-    stmt->stmt_do_while.block = block;
-    stmt->stmt_do_while.expr = expr;
+    stmt->stmt_while.block = block;
+    stmt->stmt_while.expr = expr;
     return stmt;
 }
 

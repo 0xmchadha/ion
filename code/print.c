@@ -244,11 +244,11 @@ void print_stmt(Stmt *stmt) {
         printf("(do ");
         indent++;
         print_newline();
-        print_stmtblock(stmt->stmt_do_while.block);
+        print_stmtblock(stmt->stmt_while.block);
         indent--;
         print_newline();
         printf(" while ");
-        print_expr(stmt->stmt_do_while.expr);
+        print_expr(stmt->stmt_while.expr);
         printf(")");
         break;
     case STMT_FOR:
@@ -286,14 +286,19 @@ void print_stmt(Stmt *stmt) {
             if (cases->is_default) {
                 printf("(default");
             } else {
-                printf("(case ");
-                print_expr(cases->expr);
+                for (Expr **expr = stmt->stmt_switch.cases->expr;
+                     expr != stmt->stmt_switch.cases->expr + stmt->stmt_switch.cases->num_exprs;
+                     expr++) {
+                    printf("(case ");
+                    print_expr(*expr);
+                    print_newline();
+                }
             }
             indent++;
             print_newline();
-            StmtBlock block = (StmtBlock){cases->stmts, cases->num_stmts};
-            print_stmtblock(block);
+            print_stmtblock(cases->block);
             indent--;
+            printf(")");
         }
         indent--;
 
@@ -416,7 +421,7 @@ void print_decl_test() {
         "func f() { enum E {A,B,C} return; }",
         "func f() { if (1) { return 1;} else if (2) {return 2;} else {return 3;}}",
         "typedef cmplx = int***[16]",
-        "var vs = Vector[2]{[0] = 1, 2}",
+        "var vs = int[2] {[0] = 1}",
     };
 
     for (size_t i = 0; i < sizeof(decl) / sizeof(*decl); i++) {
