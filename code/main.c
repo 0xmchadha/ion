@@ -24,9 +24,12 @@
 
 #include "resolve.c"
 
+#include "gen.c"
+
 int main() {
     common_test();
     lex_test();
-    print_decl_test();
+    // print_decl_test();
     resolve_test();
+    //   gen_test();
 }

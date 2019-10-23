@@ -2,6 +2,7 @@ typedef struct Expr Expr;
 typedef struct Decl Decl;
 typedef struct Stmt Stmt;
 typedef struct Typespec Typespec;
+typedef struct Sym Sym;
 
 typedef enum StmtKind {
     STMT_NONE,
@@ -160,6 +161,7 @@ typedef struct ConstDecl {
 typedef struct Decl {
     DeclKind kind;
     const char *name;
+    Sym *sym;
     union {
         EnumDecl enum_decl;
         AggregateDecl aggregate_decl;

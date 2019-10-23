@@ -6,16 +6,16 @@ typedef struct BufHdr {
 
 #define buf__hdr(buf) ((struct BufHdr *) ((char *) buf - offsetof(struct BufHdr, buf_)))
 #define buf__fit(buf)                                                                              \
-    ((!(buf) || buf__hdr(buf)->len == buf__hdr(buf)->cap) ? (buf = buf_grow(buf, sizeof(*buf)))    \
-                                                          : 0)
+    ((!(buf) || buf__hdr(buf)->len == buf__hdr(buf)->cap) ? (buf = buf_grow(buf, sizeof(*buf))) : 0)
 
 // macros to be used by clients
 #define buf_push(buf, ...) (buf__fit(buf), ((buf)[buf__hdr(buf)->len++] = (__VA_ARGS__)))
 #define buf_len(buf) ((buf) ? (buf__hdr(buf)->len) : 0)
-#define buf_end(buf) ((buf) + buf_len(buf))		
+#define buf_end(buf) ((buf) + buf_len(buf))
 #define buf_cap(buf) ((buf) ? buf__hdr(buf)->cap : 0)
 #define buf_free(buf) ((buf) ? (free(buf__hdr(buf)), (buf) = NULL) : 0)
 #define buf_sizeof(buf) ((buf) ? (buf_len(buf) * sizeof(*buf)) : 0)
+#define buf_printf(buf, ...) buf = buf__printf((buf), __VA_ARGS__)
 
 void *xmalloc(size_t num_bytes) {
     void *ptr = malloc(num_bytes);
@@ -50,6 +50,18 @@ void *xcalloc(size_t num_bytes) {
     return ptr;
 }
 
+const char *strf(const char *fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+    size_t n = 1 + vsnprintf(NULL, 0, fmt, args);
+    char *str = xmalloc(n);
+    va_end(args);
+    va_start(args, fmt);
+    vsnprintf(str, n, fmt, args);
+    va_end(args);
+    return str;
+}
+
 void *buf_grow(void *_buf, int elem_size) {
     struct BufHdr *buf;
     if (!_buf) {
@@ -63,6 +75,23 @@ void *buf_grow(void *_buf, int elem_size) {
     }
 
     return (char *) buf + offsetof(struct BufHdr, buf_);
+}
+
+char *buf__printf(char *buf, const char *fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+    size_t n = 1 + vsnprintf(NULL, 0, fmt, args);
+    va_end(args);
+
+    if (buf_cap(buf) < buf_len(buf) + n) {
+        buf = buf_grow(buf, buf_len(buf) + n);
+    }
+
+    va_start(args, fmt);
+    vsnprintf(&(buf)[buf__hdr(buf)->len], n, fmt, args);
+    buf__hdr(buf)->len += (n - 1);
+    va_end(args);
+    return buf;
 }
 
 #define ARENA_BLOCK_SIZE 1024
@@ -148,6 +177,18 @@ void buf_test() {
     assert(buf == NULL);
     assert(buf_len(buf) == 0);
 
+    {
+        char *buf_print = NULL;
+
+        buf_print = buf__printf(buf_print, "%s", "hello");
+        buf_print = buf__printf(buf_print, " %s", "world");
+
+        printf("%s", buf_print);
+        /* if (strcmp(buf_print, "hello world")) { */
+        /*     assert(0); */
+        /* } */
+    }
+
     printf("buf test passed\n");
 }
 
@@ -178,7 +219,9 @@ const char *str_intern_range(const char *start, const char *end) {
     return interns[i].str;
 }
 
-const char *str_intern(const char *str) { return str_intern_range(str, str + strlen(str)); }
+const char *str_intern(const char *str) {
+    return str_intern_range(str, str + strlen(str));
+}
 
 void str_intern_test() {
     char a[] = "hello";
@@ -187,8 +230,7 @@ void str_intern_test() {
 
     assert(a != b);
     assert(str_intern(&a[0]) == str_intern(&b[0]));
-    assert(str_intern_range(&a[0], &a[strlen(a)]) !=
-           str_intern_range(&c[0], &b[strlen(c)]));
+    assert(str_intern_range(&a[0], &a[strlen(a)]) != str_intern_range(&c[0], &b[strlen(c)]));
     printf("string intern test passed\n");
 }
 
@@ -204,7 +246,7 @@ void fatal(const char *fmt, ...) {
 
 #define syntax_error(fmt, ...) syntax__error(fmt, __LINE__, __FILE__)
 
-void syntax__error(const char *fmt, int line, char *file,...) {
+void syntax__error(const char *fmt, int line, char *file, ...) {
     va_list args;
     va_start(args, file);
     printf("Syntax Error: %d %s ", line, file);

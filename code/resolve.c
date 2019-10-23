@@ -1,9 +1,11 @@
 typedef struct Type Type;
 typedef struct Sym Sym;
 
-void resolve_sym(Sym *sym);
+void resolve_global_sym(Sym *sym);
 Type *create_type(Typespec *type);
 void complete_type(Type *type);
+Type *ptr_decay(Type *type);
+
 typedef enum {
     SYM_UNRESOLVED,
     SYM_RESOLVING,
@@ -36,6 +38,7 @@ typedef enum TypeKind {
     TYPE_PTR,
     TYPE_ARRAY,
     TYPE_STRUCT,
+    TYPE_UNION,
     TYPE_FUNC,
 } TypeKind;
 
@@ -103,7 +106,7 @@ Type *type_func(Type **args, size_t num_args, Type *ret_type);
 Sym *sym_get(const char *name);
 void resolve_stmt(Stmt *stmt, Type *expected_type, Sym *scope_start);
 
-void create_global_decl() {
+void create_base_types() {
     buf_push(global_syms, (Sym){.name = str_intern("int"),
                                 .state = SYM_RESOLVED,
                                 .kind = SYM_TYPE,
@@ -114,7 +117,7 @@ void create_global_decl() {
                                 .type = type_void});
 }
 
-void install_decls(Decl *decl) {
+void create_global_decl(Decl *decl) {
     if (sym_get(decl->name) != NULL) {
         fatal("symbol %s already exists", decl->name);
     }
@@ -132,7 +135,8 @@ void install_decls(Decl *decl) {
                  (Sym){.name = decl->name, .kind = SYM_VAR, .decl = decl, .state = SYM_UNRESOLVED});
         break;
     case DECL_AGGREGATE:
-        type_aggregate = type_alloc(TYPE_STRUCT);
+        type_aggregate =
+            type_alloc((decl->aggregate_decl.kind == AGGREGATE_STRUCT) ? TYPE_STRUCT : TYPE_UNION);
         type_aggregate->aggregate.name = decl->name;
         type_aggregate->state = TYPE_UNRESOLVED;
         type_aggregate->name = decl->name;
@@ -269,7 +273,8 @@ Type *create_type(Typespec *type) {
     case TYPESPEC_FUNC: {
         Type **func_args = NULL;
         for (int i = 0; i < type->func.num_args; i++) {
-            buf_push(func_args, create_type(type->func.args[i]));
+            // function parameter array automatically decays to a pointer
+            buf_push(func_args, ptr_decay(create_type(type->func.args[i])));
         }
         Type *ret_type = create_type(type->func.ret);
         return type_func(func_args, buf_len(func_args), ret_type);
@@ -285,7 +290,7 @@ void complete_type(Type *type) {
     TypeField *fields = NULL;
     size_t num_fields = 0;
 
-    if (type->kind == TYPE_STRUCT) {
+    if (type->kind == TYPE_STRUCT || type->kind == TYPE_UNION) {
         if (type->state == TYPE_RESOLVED) {
             return;
         }
@@ -318,17 +323,20 @@ void complete_type(Type *type) {
         type->aggregate.fields = fields;
         type->aggregate.num_fields = num_fields;
         type->state = TYPE_RESOLVED;
+
+        // fast lookup of sym from decl
+        sym->decl->sym = sym;
+        buf_push(ordered_decls, sym->decl);
+        sym->state = SYM_RESOLVED;
     }
 }
 
-ResolvedExpr ptr_decay(ResolvedExpr expr) {
-    if (expr.type->kind == TYPE_ARRAY) {
-        ResolvedExpr expr_ptr = expr;
-        expr_ptr.type = type_ptr(expr.type->array.elem);
-        return expr_ptr;
+Type *ptr_decay(Type *type) {
+    if (type->kind == TYPE_ARRAY) {
+        return type_ptr(type->array.elem);
     }
 
-    return expr;
+    return type;
 }
 
 ResolvedExpr const_int_expr(int64_t val) {
@@ -427,7 +435,7 @@ ResolvedExpr resolve_name_expr(Expr *expr) {
         fatal("Expected sym %s to exist", expr->name);
     }
 
-    resolve_sym(sym);
+    resolve_global_sym(sym);
     if (sym->kind == SYM_VAR) {
         return lvalue_expr(sym->type);
     } else if (sym->kind == SYM_CONST) {
@@ -445,7 +453,7 @@ ResolvedExpr resolve_unary_expr(Expr *expr) {
     ResolvedExpr operand = resolve_expr(expr->unary_expr.expr);
     switch (expr->unary_expr.op) {
     case TOKEN_MUL:
-        operand = ptr_decay(operand);
+        operand.type = ptr_decay(operand.type);
         if (operand.type->kind != TYPE_PTR) {
             fatal("Can deref only a pointer type");
         }
@@ -469,7 +477,7 @@ ResolvedExpr resolve_unary_expr(Expr *expr) {
 ResolvedExpr resolve_field_expr(Expr *expr) {
     ResolvedExpr base = resolve_expr(expr->field_expr.expr);
 
-    if (base.type->kind != TYPE_STRUCT) {
+    if (base.type->kind != TYPE_STRUCT && base.type->kind != TYPE_UNION) {
         fatal("Error: only struct types have access fields");
     }
 
@@ -493,8 +501,8 @@ ResolvedExpr resolve_index_expr(Expr *expr) {
         fatal("Only pointer and array types can be indexed");
     }
 
-    ResolvedExpr ptr_expr = ptr_decay(operand);
-    return lvalue_expr(ptr_expr.type->ptr.elem);
+    operand.type = ptr_decay(operand.type);
+    return lvalue_expr(operand.type->ptr.elem);
 }
 
 ResolvedExpr resolve_call_expr(Expr *expr) {
@@ -511,6 +519,8 @@ ResolvedExpr resolve_call_expr(Expr *expr) {
     for (int i = 0; i < expr->call_expr.num_args; i++) {
         ResolvedExpr expr_args =
             resolve_expected_expr(expr->call_expr.args[i], func.type->func.args[i]);
+        expr_args.type = ptr_decay(expr_args.type);
+
         if (expr_args.type != func.type->func.args[i]) {
             fatal("func arg types %d do not match", i);
         }
@@ -536,8 +546,8 @@ ResolvedExpr resolve_cast_expr(Expr *expr) {
 }
 
 size_t get_index_field(Type *type, const char *name) {
-    if (type->kind != TYPE_STRUCT) {
-        fatal("only struct types can have index to fields");
+    if (type->kind != TYPE_STRUCT && type->kind != TYPE_UNION) {
+        fatal("only struct and union types can have index to fields");
     }
 
     for (size_t i = 0; i < type->aggregate.num_fields; i++) {
@@ -571,11 +581,11 @@ ResolvedExpr resolve_compound_expr(Expr *expr, Type *expected_type) {
 
     complete_type(expected_type);
 
-    if (expected_type->kind != TYPE_STRUCT && expected_type->kind != TYPE_ARRAY) {
+    if (expected_type->kind != TYPE_STRUCT && expected_type->kind != TYPE_UNION && expected_type->kind != TYPE_ARRAY) {
         fatal("compound expression requires struct or array types");
     }
 
-    if (expected_type->kind == TYPE_STRUCT) {
+    if (expected_type->kind == TYPE_STRUCT || expected_type->kind == TYPE_UNION) {
         if (expr->compound_expr.type != NULL && expected_type != NULL) {
             if (create_type(expr->compound_expr.type) != expected_type) {
                 fatal("Expected type of compound literal should match the declared type of "
@@ -783,7 +793,7 @@ Type *order_decl_const(Decl *decl, int64_t *val) {
     return resolved_expr.type;
 }
 
-void resolve_sym(Sym *sym) {
+void resolve_global_sym(Sym *sym) {
     if (sym->state == SYM_RESOLVED) {
         return;
     }
@@ -806,7 +816,7 @@ void resolve_sym(Sym *sym) {
         sym->type = order_decl_var(decl);
         break;
     case DECL_AGGREGATE:
-        break;
+        return;
     case DECL_FUNC: {
         Type **func_args = NULL;
         for (int i = 0; i < decl->func_decl.num_func_args; i++) {
@@ -820,6 +830,8 @@ void resolve_sym(Sym *sym) {
         sym->type = create_type(decl->typedef_decl.type);
     }
 
+    // fast lookup of sym from decl
+    sym->decl->sym = sym;
     buf_push(ordered_decls, sym->decl);
     sym->state = SYM_RESOLVED;
 }
@@ -944,7 +956,6 @@ void resolve_stmt(Stmt *stmt, Type *expected_type, Sym *scope_start) {
         resolve_stmtblock(stmt->stmt_for.block, expected_type, scope_start_inner);
         // leave inner scope
         scope_leave(scope_start_inner);
-
         // leave outer for scope
         scope_leave(scope_start_for);
         break;
@@ -970,6 +981,10 @@ void resolve_stmt(Stmt *stmt, Type *expected_type, Sym *scope_start) {
     case STMT_ASSIGN: {
         ResolvedExpr left_expr = resolve_expr(stmt->stmt_assign.left_expr);
         ResolvedExpr right_expr = resolve_expr(stmt->stmt_assign.right_expr);
+
+        if (left_expr.type->kind == TYPE_ARRAY) {
+            fatal("can not assign to lvalue of type array");
+        }
 
         if (!left_expr.is_lvalue) {
             fatal("Can not assign value to non lvalue expression");
@@ -1016,9 +1031,12 @@ void resolve_func_body(Sym *sym) {
 
 void resolve_test() {
     const char *decl[] = {
-        /* // Test functions and Statements */
-        /* // check return statement matching the type */
+        // Test functions and Statements
+        //      check return statement matching the type
         "struct funcTest1 {i,j :int;}",
+        "union testunion {i, j :int;}",
+        "var testvarunion : testunion",
+        "var testvari :int = testvarunion.i",
         "func foo1(a :int):funcTest1 {return funcTest1{1,2};}",
         "var Testa :int",
         "func foo2(a :int):int {if (a) {return a;} else {return Testa;}}",
@@ -1062,7 +1080,7 @@ void resolve_test() {
         "var e:int = cast(int, d)",
         "var f:int[10]",
         "var g:int = cast(int, f)",
-        // test teranary
+        /* // test teranary */
         "var ta = g ? 2 : 3",
         // test sizeof expr
         "const size_int = sizeof(:int)",
@@ -1089,18 +1107,21 @@ void resolve_test() {
         "var tVector = nVector{x=10,y=10}",
         "var t2vector = (:int[2]){1,2}",
         "var t3vector = (:int[2]){[1] = 1},",
+        "var testM = (:nVector[2]){{},{}}",
     };
 
-    create_global_decl();
+    create_base_types();
+
     for (int i = 0; i < sizeof(decl) / sizeof(*decl); i++) {
         init_stream(decl[i]);
         Decl *d = parse_decl_opt();
-        install_decls(d);
+        assert(d);
+        create_global_decl(d);
     }
 
     for (Sym *sym = global_syms; sym != buf_end(global_syms); sym++) {
         if (sym->decl) {
-            resolve_sym(sym);
+            resolve_global_sym(sym);
         }
     }
 
@@ -1108,9 +1129,7 @@ void resolve_test() {
         if (sym->type) {
             complete_type(sym->type);
         }
-    }
 
-    for (Sym *sym = global_syms; sym != buf_end(global_syms); sym++) {
         if (sym->decl && sym->decl->kind == DECL_FUNC) {
             resolve_func_body(sym);
         }

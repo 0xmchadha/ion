@@ -422,6 +422,7 @@ void print_decl_test() {
         "func f() { if (1) { return 1;} else if (2) {return 2;} else {return 3;}}",
         "typedef cmplx = int***[16]",
         "var vs = int[2] {[0] = 1}",
+        "typedef Ftest1 = (func() :(func():int)[10])*",
     };
 
     for (size_t i = 0; i < sizeof(decl) / sizeof(*decl); i++) {
