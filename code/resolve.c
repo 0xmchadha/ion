@@ -18,6 +18,7 @@ typedef enum SymKind {
     SYM_CONST,
     SYM_FUNC,
     SYM_TYPE,
+    SYM_ENUM_MEM,
 } SymKind;
 
 typedef struct Sym {
@@ -26,6 +27,9 @@ typedef struct Sym {
     Decl *decl;
     SymState state;
     Type *type;
+    // used for enum members
+    const char *enum_decl;
+    // used for constants, ie const int and enums
     union {
         int64_t val;
     };
@@ -39,6 +43,7 @@ typedef enum TypeKind {
     TYPE_ARRAY,
     TYPE_STRUCT,
     TYPE_UNION,
+    TYPE_ENUM,
     TYPE_FUNC,
 } TypeKind;
 
@@ -152,7 +157,23 @@ void create_global_decl(Decl *decl) {
             global_syms,
             (Sym){.name = decl->name, .kind = SYM_FUNC, .decl = decl, .state = SYM_UNRESOLVED});
         break;
+    case DECL_ENUM: {
+        buf_push(global_syms, (Sym){.name = decl->name,
+                                    .kind = SYM_TYPE,
+                                    .decl = decl,
+                                    .type = type_int,
+                                    .state = SYM_UNRESOLVED});
 
+        for (int i = 0; i < decl->enum_decl.num_enum_items; i++) {
+            buf_push(global_syms, (Sym){.name = decl->enum_decl.items[i].name,
+                                        .kind = SYM_ENUM_MEM,
+                                        .decl = decl,
+                                        .type = type_int,
+                                        .state = SYM_UNRESOLVED,
+                                        .enum_decl = decl->name});
+        }
+        break;
+    }
     case DECL_TYPEDEF:
         buf_push(
             global_syms,
@@ -440,10 +461,12 @@ ResolvedExpr resolve_name_expr(Expr *expr) {
         return lvalue_expr(sym->type);
     } else if (sym->kind == SYM_CONST) {
         return const_int_expr(sym->val);
+    } else if (sym->kind == SYM_ENUM_MEM) {
+        return const_int_expr(sym->val);
     } else if (sym->kind == SYM_FUNC) {
         return rvalue_expr(sym->type);
     } else {
-        fatal("%s can only be var var, const or func", expr->name);
+        fatal("%s can only be var, const or func", expr->name);
     }
     return (ResolvedExpr){};
 }
@@ -581,7 +604,8 @@ ResolvedExpr resolve_compound_expr(Expr *expr, Type *expected_type) {
 
     complete_type(expected_type);
 
-    if (expected_type->kind != TYPE_STRUCT && expected_type->kind != TYPE_UNION && expected_type->kind != TYPE_ARRAY) {
+    if (expected_type->kind != TYPE_STRUCT && expected_type->kind != TYPE_UNION &&
+        expected_type->kind != TYPE_ARRAY) {
         fatal("compound expression requires struct or array types");
     }
 
@@ -640,7 +664,9 @@ ResolvedExpr resolve_compound_expr(Expr *expr, Type *expected_type) {
         }
 
         if (expected_type->array.size < expr->compound_expr.num_args) {
-            fatal("compound literal has more array members than the defined type");
+            fatal("compound literal has more array members than the defined type: expected: %d "
+                  "actual :%d",
+                  expected_type->array.size, expr->compound_expr.num_args);
         }
 
         for (size_t i = 0, array_index = 0; i < expr->compound_expr.num_args; i++, array_index++) {
@@ -793,6 +819,14 @@ Type *order_decl_const(Decl *decl, int64_t *val) {
     return resolved_expr.type;
 }
 
+void order_enum_const(const char *name, Expr *expr, int64_t *val) {
+    ResolvedExpr resolved_expr = resolve_expr(expr);
+    if (!resolved_expr.is_const) {
+        fatal("%s declared as constant, but the value assigned is not a constant", name);
+    }
+    *val = resolved_expr.val;
+}
+
 void resolve_global_sym(Sym *sym) {
     if (sym->state == SYM_RESOLVED) {
         return;
@@ -801,7 +835,7 @@ void resolve_global_sym(Sym *sym) {
     Decl *decl = sym->decl;
 
     if (sym->state == SYM_RESOLVING) {
-        fatal("illegal value cycle in types");
+        fatal("illegal value cycle while resolving %s in types", sym->name);
     }
 
     sym->state = SYM_RESOLVING;
@@ -826,10 +860,31 @@ void resolve_global_sym(Sym *sym) {
         sym->type = type_func(func_args, buf_len(func_args), ret_type);
         break;
     }
-    case DECL_TYPEDEF:
+    case DECL_TYPEDEF: {
         sym->type = create_type(decl->typedef_decl.type);
+        break;
     }
-
+    case DECL_ENUM: {
+        if (sym->kind == SYM_TYPE) {
+            int val = 0;
+            for (int i = 0; i < decl->enum_decl.num_enum_items; i++) {
+                Sym *sym = sym_get(decl->enum_decl.items[i].name);
+                if (!decl->enum_decl.items[i].expr) {
+                    sym->val = val;
+                } else {
+                    order_enum_const(sym->name, decl->enum_decl.items[i].expr, &sym->val);
+                    val = sym->val;
+                }
+                val++;
+                sym->state = SYM_RESOLVED;
+            }
+        } else {
+            Sym *sym_enum = sym_get(sym->enum_decl);
+            resolve_global_sym(sym_enum);
+            return;
+        }
+    }
+    }
     // fast lookup of sym from decl
     sym->decl->sym = sym;
     buf_push(ordered_decls, sym->decl);
@@ -1031,6 +1086,11 @@ void resolve_func_body(Sym *sym) {
 
 void resolve_test() {
     const char *decl[] = {
+
+        // test enum
+        "enum enumD{A=F,B,C}",
+        "enum enumE{F=3,G}",
+        "var testenumarr :int[C] = {1,2,3,4,5}",
         // Test functions and Statements
         //      check return statement matching the type
         "struct funcTest1 {i,j :int;}",
