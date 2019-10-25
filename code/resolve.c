@@ -38,7 +38,9 @@ typedef struct Sym {
 typedef enum TypeKind {
     TYPE_NONE,
     TYPE_VOID,
+    TYPE_CHAR,
     TYPE_INT,
+    TYPE_FLOAT,
     TYPE_PTR,
     TYPE_ARRAY,
     TYPE_STRUCT,
@@ -87,8 +89,10 @@ typedef struct Type {
     };
 } Type;
 
-Type *type_int = &(Type){.kind = TYPE_INT, .size = 4, .alignment = 4};
 Type *type_void = &(Type){.kind = TYPE_VOID, .size = 0, .alignment = 0};
+Type *type_int = &(Type){.kind = TYPE_INT, .size = 4, .alignment = 4};
+Type *type_char = &(Type){.kind = TYPE_CHAR, .size = 1, .alignment = 1};
+Type *type_float = &(Type){.kind = TYPE_FLOAT, .size = 4, .alignment = 4};
 
 const size_t PTR_SIZE = 8;
 const size_t PTR_ALIGNMENT = 8;
@@ -112,14 +116,23 @@ Sym *sym_get(const char *name);
 void resolve_stmt(Stmt *stmt, Type *expected_type, Sym *scope_start);
 
 void create_base_types() {
-    buf_push(global_syms, (Sym){.name = str_intern("int"),
-                                .state = SYM_RESOLVED,
-                                .kind = SYM_TYPE,
-                                .type = type_int});
     buf_push(global_syms, (Sym){.name = str_intern("void"),
                                 .state = SYM_RESOLVED,
                                 .kind = SYM_TYPE,
                                 .type = type_void});
+    buf_push(global_syms, (Sym){.name = str_intern("int"),
+                                .state = SYM_RESOLVED,
+                                .kind = SYM_TYPE,
+                                .type = type_int});
+    buf_push(global_syms, (Sym){.name = str_intern("char"),
+                                .state = SYM_RESOLVED,
+                                .kind = SYM_TYPE,
+                                .type = type_char});
+        
+    buf_push(global_syms, (Sym){.name = str_intern("float"),
+                                .state = SYM_RESOLVED,
+                                .kind = SYM_TYPE,
+                                .type = type_float});
 }
 
 void create_global_decl(Decl *decl) {

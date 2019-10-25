@@ -11,11 +11,7 @@ void gen_stmt(Stmt *stmt);
 
 const char *aggregate_typedecl_to_cdecl(Type *t) {
 
-    if (t->kind != TYPE_STRUCT) {
-        assert(0);
-    }
-    // todo type_union
-
+    assert(t->kind == TYPE_STRUCT || t->kind == TYPE_UNION);
     genf("struct %s {\n", t->aggregate.name);
     indent_newline++;
     for (int i = 0; i < t->aggregate.num_fields; i++) {
@@ -51,7 +47,7 @@ const char *type_to_cdecl(Type *t, const char *gen) {
     case TYPE_INT:
         return strf("int %s", gen);
     case TYPE_PTR:
-        return type_to_cdecl(t->ptr.elem, strf("*(%s)", gen));
+        return type_to_cdecl(t->ptr.elem, ((gen == "") ? strf("*") : strf("*(%s)", gen)));
     case TYPE_ARRAY:
         // (var foo (array (ptr int) 10)) --> int *(foo[10])
         if (gen == "") {
@@ -59,6 +55,7 @@ const char *type_to_cdecl(Type *t, const char *gen) {
         } else {
             return type_to_cdecl(t->array.elem, strf("(%s)[%d]", gen, t->array.size));
         }
+    case TYPE_UNION:
     case TYPE_STRUCT: {
         // (var foo S*)
         return strf("struct %s %s", t->aggregate.name, gen);
@@ -93,9 +90,8 @@ void gen_decl(Sym *sym) {
 
     switch (decl->kind) {
     case DECL_AGGREGATE: {
-        if (decl->aggregate_decl.kind != AGGREGATE_STRUCT) {
-            assert(0);
-        }
+        assert(decl->aggregate_decl.kind != AGGREGATE_STRUCT ||
+               decl->aggregate_decl.kind != AGGREGATE_UNION);
         aggregate_typedecl_to_cdecl(sym->type);
         break;
     }
@@ -213,7 +209,7 @@ void gen_stmt(Stmt *stmt) {
         break;
     }
     case STMT_ASSIGN:
-        genf("%s %s %s", gen_expr(stmt->stmt_assign.left_expr),
+        genf("%s %s %s;\n", gen_expr(stmt->stmt_assign.left_expr),
              token_kind_name(stmt->stmt_assign.op), gen_expr(stmt->stmt_assign.right_expr));
         break;
     case STMT_RETURN:
@@ -237,7 +233,7 @@ void gen_stmt(Stmt *stmt) {
         genf("if (%s)", gen_expr(stmt->stmt_if.expr));
         gen_stmtblock(stmt->stmt_if.if_block);
         for (int i = 0; i < stmt->stmt_if.num_elseifs; i++) {
-            genf("else if(%s) ", stmt->stmt_if.else_ifs[i].expr);
+            genf("else if(%s) ", gen_expr(stmt->stmt_if.else_ifs[i].expr));
             gen_stmtblock(stmt->stmt_if.else_ifs[i].block);
         }
 
@@ -251,12 +247,12 @@ void gen_stmt(Stmt *stmt) {
         break;
     }
     case STMT_DO_WHILE:
-        genf("do {\n");
+        genf("do \n");
         gen_stmtblock(stmt->stmt_while.block);
-        genf("while (%s);\n", stmt->stmt_while.expr);
+        genf("while (%s);\n", gen_expr(stmt->stmt_while.expr));
         break;
     case STMT_WHILE:
-        genf("while (%s)", stmt->stmt_while.expr);
+        genf("while (%s)", gen_expr(stmt->stmt_while.expr));
         gen_stmtblock(stmt->stmt_while.block);
         break;
     case STMT_FOR: {
@@ -281,30 +277,15 @@ void gen_stmt(Stmt *stmt) {
         if (stmt->stmt_for.next) {
             Stmt *next = stmt->stmt_for.next;
             assert(next->kind == STMT_ASSIGN);
-            genf("%s %s %s;", gen_expr(next->stmt_assign.left_expr),
+            genf("%s %s %s", gen_expr(next->stmt_assign.left_expr),
                  token_kind_name(next->stmt_assign.op), gen_expr(next->stmt_assign.right_expr));
-        } else {
-            genf(";");
         }
-        genf("}");
+        genf(")");
         gen_stmtblock(stmt->stmt_for.block);
         break;
     }
     case STMT_SWITCH: {
-        /*         typedef struct SwitchCase { */
-        /*     Expr **expr; */
-        /*     size_t num_exprs; */
-        /*     bool is_default; */
-        /*     StmtBlock block; */
-        /* }SwitchCase; */
-
-        /* typedef struct StmtSwitch { */
-        /*     Expr *expr; */
-        /*     SwitchCase *cases; */
-        /*     size_t num_cases; */
-        /* } StmtSwitch; */
-
-        genf("switch (%s) {", stmt->stmt_switch.expr);
+        genf("switch (%s) {", gen_expr(stmt->stmt_switch.expr));
         indent_newline++;
         for (int i = 0; i < stmt->stmt_switch.num_cases; i++) {
             for (int j = 0; j < stmt->stmt_switch.cases[i].num_exprs; j++) {
@@ -372,7 +353,99 @@ void gen_code(Sym *sym) {
     }
 }
 
+void gen_c_code(const char *code) {
+    Decl *d;
+
+    create_base_types();
+
+    init_stream(code);
+    while (d = parse_decl_opt()) {
+        create_global_decl(d);
+    }
+
+    for (Sym *sym = global_syms; sym != buf_end(global_syms); sym++) {
+        if (sym->decl) {
+            resolve_global_sym(sym);
+        }
+    }
+
+    for (Sym *sym = global_syms; sym != buf_end(global_syms); sym++) {
+        if (sym->type) {
+            complete_type(sym->type);
+        }
+
+        if (sym->decl && sym->decl->kind == DECL_FUNC) {
+            resolve_func_body(sym);
+        }
+    }
+
+    genf("// Forward declared all types //\n\n");
+    // Forward declare all types
+    for (Decl **decl = ordered_decls; decl != buf_end(ordered_decls); decl++) {
+        if ((*decl)->kind == DECL_AGGREGATE) {
+            genf("%s;\n", type_to_cdecl((*decl)->sym->type, ""));
+            //            gen_code((*decl)->sym);
+        }
+    }
+
+    genf("\n\n// Types defined // \n\n");
+    // // Output types in the resolved order
+    for (Decl **decl = ordered_decls; decl != buf_end(ordered_decls); decl++) {
+        if ((*decl)->kind == DECL_AGGREGATE) {
+            gen_code((*decl)->sym);
+        }
+    }
+
+    genf("\n\n// Forward declare all functions // \n\n");
+    for (Decl **decl = ordered_decls; decl != buf_end(ordered_decls); decl++) {
+        if ((*decl)->kind == DECL_FUNC) {
+            genf("%s;\n", type_to_cdecl((*decl)->sym->type, (*decl)->name));
+        }
+    }
+
+    genf("\n\n// Generate functions in the program order // \n\n");
+    for (Decl **decl = ordered_decls; decl != buf_end(ordered_decls); decl++) {
+        switch ((*decl)->sym->kind) {
+        case SYM_VAR:
+        case SYM_CONST:
+        case SYM_FUNC:
+            gen_code((*decl)->sym);
+        }
+    }
+
+    printf("%s", gen_buf);
+}
+
 void gen_test() {
+    const char *code =
+        "func example_test(): int { return fact_rec(10) == fact_iter(10); }\n"
+        "union IntOrPtr { i: int; p: int*; }\n"
+        "func f() {\n"
+        "    u1 := IntOrPtr{i = 42};\n"
+        "    u2 := IntOrPtr{p = cast(int*, 42)};\n"
+        "    u1.i = 0;\n"
+        "    u2.p = cast(int*, 0);\n"
+        "}\n"
+        "var i: int\n"
+        "struct Vector { x: int; y: int; }\n"
+        "func fact_iter(n: int): int { r := 1; for (i := 2; i <= n; i++) { r *= i; } return r; }\n"
+        "func fact_rec(n: int): int { if (n == 0) { return 1; } else { return n * fact_rec(n-1); } "
+        "}\n"
+        "func f1() { v := Vector{1, 2}; j := i; i++; j++; v.x = 2*j; }\n"
+        "func f2(n: int): int { return 2*n; }\n"
+        "func f3(x: int): int { if (x) { return -x; } else if (x % 2 == 0) { return 42; } else { return -1; } }\n"
+        "func f4(n: int): int { for (i := 0; i < n; i++) { if (i % 3 == 0) { return n; } } return 0; }\n"
+        "func f5(x: int): int { switch(x) { case 0: case 1: return 42; case 3: default: return -1; } }\n"
+        "func f6(n: int): int { p := 1; while (n) { p *= 2; n--; } return p; }\n"
+        "func f7(n: int): int { p := 1; do { p *= 2; n--; } while (n); return p; }\n"
+        "const n = 1+sizeof(p)\n"
+        "var p: T*\n"
+        "struct T { a: int[n]; }\n";
+
+    gen_c_code(code);
+}
+
+void unit_test() {
     const char *decl[] = {
         "struct T {t :S;}",
 
