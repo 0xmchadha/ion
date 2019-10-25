@@ -353,22 +353,15 @@ void gen_code(Sym *sym) {
     }
 }
 
-void gen_c_code(const char *code) {
-    Decl *d;
-
-    create_base_types();
-
-    init_stream(code);
-    while (d = parse_decl_opt()) {
-        create_global_decl(d);
-    }
-
+void resolve_symbols() {
+    // Resolve all Global symbols
     for (Sym *sym = global_syms; sym != buf_end(global_syms); sym++) {
         if (sym->decl) {
             resolve_global_sym(sym);
         }
     }
 
+    // Complete the types and
     for (Sym *sym = global_syms; sym != buf_end(global_syms); sym++) {
         if (sym->type) {
             complete_type(sym->type);
@@ -378,7 +371,18 @@ void gen_c_code(const char *code) {
             resolve_func_body(sym);
         }
     }
+}
 
+void gen_c_code(const char *code) {
+    Decl *d;
+
+    create_base_types();
+    init_stream(code);
+    while (d = parse_decl_opt()) {
+        create_global_decl(d);
+    }
+
+    resolve_symbols();
     genf("// Forward declared all types //\n\n");
     // Forward declare all types
     for (Decl **decl = ordered_decls; decl != buf_end(ordered_decls); decl++) {
@@ -433,14 +437,18 @@ void gen_test() {
         "}\n"
         "func f1() { v := Vector{1, 2}; j := i; i++; j++; v.x = 2*j; }\n"
         "func f2(n: int): int { return 2*n; }\n"
-        "func f3(x: int): int { if (x) { return -x; } else if (x % 2 == 0) { return 42; } else { return -1; } }\n"
-        "func f4(n: int): int { for (i := 0; i < n; i++) { if (i % 3 == 0) { return n; } } return 0; }\n"
-        "func f5(x: int): int { switch(x) { case 0: case 1: return 42; case 3: default: return -1; } }\n"
+        "func f3(x: int): int { if (x) { return -x; } else if (x % 2 == 0) { return 42; } else { "
+        "return -1; } }\n"
+        "func f4(n: int): int { for (i := 0; i < n; i++) { if (i % 3 == 0) { return n; } } return "
+        "0; }\n"
+        "func f5(x: int): int { switch(x) { case 0: case 1: return 42; case 3: default: return -1; "
+        "} }\n"
         "func f6(n: int): int { p := 1; while (n) { p *= 2; n--; } return p; }\n"
         "func f7(n: int): int { p := 1; do { p *= 2; n--; } while (n); return p; }\n"
         "const n = 1+sizeof(p)\n"
         "var p: T*\n"
-        "struct T { a: int[n]; }\n";
+        "struct T { a: int[n]; }\n"
+        "var q:int[sizeof(:IntOrPtr)]";
 
     gen_c_code(code);
 }

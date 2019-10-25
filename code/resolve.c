@@ -128,7 +128,7 @@ void create_base_types() {
                                 .state = SYM_RESOLVED,
                                 .kind = SYM_TYPE,
                                 .type = type_char});
-        
+
     buf_push(global_syms, (Sym){.name = str_intern("float"),
                                 .state = SYM_RESOLVED,
                                 .kind = SYM_TYPE,
@@ -320,49 +320,83 @@ Type *create_type(Typespec *type) {
 
 #define MAX(a, b) (((a) > (b)) ? (a) : (b))
 
+void complete_struct_type(Type *type) {
+    size_t size = 0;
+    size_t alignment = 0;
+
+    for (int i = 0; i < type->aggregate.num_fields; i++) {
+        Type *t = type->aggregate.fields[i].type;
+        alignment = MAX(alignment, t->alignment);
+        size = ALIGN_UP(size, t->alignment) + t->size;
+    }
+
+    type->size = size;
+    type->alignment = alignment;
+}
+
+void complete_union_type(Type *type) {
+    size_t size = 0;
+    size_t alignment = 0;
+
+    for (int i = 0; i < type->aggregate.num_fields; i++) {
+        Type *t = type->aggregate.fields[i].type;
+        alignment = MAX(alignment, t->alignment);
+        size = MAX(ALIGN_UP(t->size, t->alignment), size);
+    }
+
+    type->size = size;
+    type->alignment = alignment;
+}
+
 void complete_type(Type *type) {
     TypeField *fields = NULL;
     size_t num_fields = 0;
 
-    if (type->kind == TYPE_STRUCT || type->kind == TYPE_UNION) {
-        if (type->state == TYPE_RESOLVED) {
-            return;
-        }
-
-        if (type->state == TYPE_RESOLVING) {
-            fatal("Illegal value cycle while resolving %s\n", type->name);
-            return;
-        }
-
-        type->state = TYPE_RESOLVING;
-        Sym *sym = sym_get(type->name);
-        assert(sym);
-        AggregateDecl *aggregate_decl = &sym->decl->aggregate_decl;
-        size_t size = 0;
-        size_t alignment = 0;
-        for (int i = 0; i < aggregate_decl->num_items; i++) {
-            for (int j = 0; j < aggregate_decl->items[i].num_items; j++) {
-                Type *type = create_type(aggregate_decl->items[i].type);
-                complete_type(type);
-                alignment = MAX(alignment, type->alignment);
-                size = ALIGN_UP(size, type->alignment) + type->size;
-                buf_push(fields,
-                         (TypeField){.name = aggregate_decl->items[i].names[j], .type = type});
-                num_fields++;
-            }
-        }
-
-        type->size = size;
-        type->alignment = alignment;
-        type->aggregate.fields = fields;
-        type->aggregate.num_fields = num_fields;
-        type->state = TYPE_RESOLVED;
-
-        // fast lookup of sym from decl
-        sym->decl->sym = sym;
-        buf_push(ordered_decls, sym->decl);
-        sym->state = SYM_RESOLVED;
+    if (type->state == TYPE_RESOLVED) {
+        return;
     }
+
+    if (type->kind != TYPE_STRUCT && type->kind != TYPE_UNION) {
+        return;
+    }
+    
+    if (type->state == TYPE_RESOLVING) {
+        fatal("Illegal value cycle while resolving %s\n", type->name);
+        return;
+    }
+
+    type->state = TYPE_RESOLVING;
+    Sym *sym = sym_get(type->name);
+    assert(sym);
+    AggregateDecl *aggregate_decl = &sym->decl->aggregate_decl;
+    size_t size = 0;
+    size_t alignment = 0;
+    for (int i = 0; i < aggregate_decl->num_items; i++) {
+        for (int j = 0; j < aggregate_decl->items[i].num_items; j++) {
+            Type *type = create_type(aggregate_decl->items[i].type);
+            complete_type(type);
+            alignment = MAX(alignment, type->alignment);
+            size = ALIGN_UP(size, type->alignment) + type->size;
+            buf_push(fields, (TypeField){.name = aggregate_decl->items[i].names[j], .type = type});
+            num_fields++;
+        }
+    }
+
+    type->aggregate.fields = fields;
+    type->aggregate.num_fields = num_fields;
+    type->state = TYPE_RESOLVED;
+
+    if (type->kind == TYPE_STRUCT) {
+        complete_struct_type(type);
+    } else if (type->kind == TYPE_UNION) {
+        complete_union_type(type);
+    }
+
+    // fast lookup of sym from decl
+    sym->decl->sym = sym;
+    sym->state = SYM_RESOLVED;
+
+    buf_push(ordered_decls, sym->decl);
 }
 
 Type *ptr_decay(Type *type) {
