@@ -9,37 +9,6 @@ const char *type_to_cdecl(Type *t, const char *gen);
 const char *gen_expr(Expr *expr);
 void gen_stmt(Stmt *stmt);
 
-const char *aggregate_typedecl_to_cdecl(Type *t) {
-
-    assert(t->kind == TYPE_STRUCT || t->kind == TYPE_UNION);
-    genf("struct %s {\n", t->aggregate.name);
-    indent_newline++;
-    for (int i = 0; i < t->aggregate.num_fields; i++) {
-        genf("%s;\n", type_to_cdecl(t->aggregate.fields[i].type, t->aggregate.fields[i].name));
-    }
-    indent_newline--;
-    genf("};\n\n");
-}
-
-const char *funcdef_to_cdef(Decl *decl) {
-    const char *args;
-
-    if (decl->func_decl.num_func_args == 0) {
-        args = strf("void");
-    } else {
-        args =
-            type_to_cdecl(create_type(decl->func_decl.args[0].type), decl->func_decl.args[0].name);
-    }
-
-    for (int i = 1; i < decl->func_decl.num_func_args; i++) {
-        args = strf(
-            "%s, %s", args,
-            type_to_cdecl(create_type(decl->func_decl.args[i].type), decl->func_decl.args[i].name));
-    }
-
-    return type_to_cdecl(create_type(decl->func_decl.type), strf("%s(%s)", decl->name, args));
-}
-
 const char *type_to_cdecl(Type *t, const char *gen) {
     switch (t->kind) {
     case TYPE_VOID:
@@ -55,9 +24,10 @@ const char *type_to_cdecl(Type *t, const char *gen) {
         } else {
             return type_to_cdecl(t->array.elem, strf("(%s)[%d]", gen, t->array.size));
         }
-    case TYPE_UNION:
+    case TYPE_UNION: {
+        return strf("union %s %s", t->aggregate.name, gen);
+    }
     case TYPE_STRUCT: {
-        // (var foo S*)
         return strf("struct %s %s", t->aggregate.name, gen);
     }
         // (var f (func () int)) --> int (f)()
@@ -81,20 +51,89 @@ const char *type_to_cdecl(Type *t, const char *gen) {
     }
 }
 
-void gen_decl(Sym *sym) {
-    Decl *decl = sym->decl;
+void gen_decl(Decl *decl) {
+    Sym *sym = decl->sym;
+    const char *name = decl->name;
+    Type *type = sym->type;
 
     if (!decl) {
         return;
     }
 
     switch (decl->kind) {
-    case DECL_AGGREGATE: {
-        assert(decl->aggregate_decl.kind != AGGREGATE_STRUCT ||
-               decl->aggregate_decl.kind != AGGREGATE_UNION);
-        aggregate_typedecl_to_cdecl(sym->type);
+    case DECL_ENUM: {
+        genf("enum %s {\n", name);
+        indent_newline++;
+        for (int i = 0; i < decl->enum_decl.num_enum_items; i++) {
+            genf("%s");
+            if (decl->enum_decl.items[i].expr) {
+                genf(" = %s,\n", gen_expr(decl->enum_decl.items[i].expr));
+            }
+        }
+        indent_newline--;
+        genf("}\n\n");
         break;
     }
+    case DECL_TYPEDEF:
+        assert(0);
+    case DECL_VAR: {
+        if (type->kind == TYPE_FUNC) {
+            name = strf("*%s", name);
+        }
+
+        genf("%s", type_to_cdecl(type, name));
+
+        if (decl->var_decl.expr) {
+            genf(" = %s;\n", gen_expr(decl->var_decl.expr));
+        } else {
+            genf(";\n");
+        }
+
+        break;
+    }
+    case DECL_CONST:
+        genf("enum {%s = %d};\n", type_to_cdecl(type, name), sym->val);
+        break;
+
+    case DECL_AGGREGATE: {
+        const char *aggregate =
+            (decl->aggregate_decl.kind == AGGREGATE_STRUCT) ? "struct" : "union";
+        genf("%s %s {\n", aggregate, type->aggregate.name);
+        indent_newline++;
+        for (int i = 0; i < type->aggregate.num_fields; i++) {
+            genf("%s;\n",
+                 type_to_cdecl(type->aggregate.fields[i].type, type->aggregate.fields[i].name));
+        }
+        indent_newline--;
+        genf("};\n\n");
+        break;
+    }
+
+    case DECL_FUNC: {
+        const char *args;
+
+        if (decl->func_decl.num_func_args == 0) {
+            args = strf("void");
+        } else {
+            args = type_to_cdecl(create_type(decl->func_decl.args[0].type),
+                                 decl->func_decl.args[0].name);
+        }
+        for (int i = 1; i < decl->func_decl.num_func_args; i++) {
+            args = strf("%s, %s", args,
+                        type_to_cdecl(create_type(decl->func_decl.args[i].type),
+                                      decl->func_decl.args[i].name));
+        }
+        genf("%s {\n",
+             type_to_cdecl(create_type(decl->func_decl.type), strf("%s(%s)", decl->name, args)));
+        indent_newline++;
+        for (int i = 0; i < sym->decl->func_decl.block.num_stmts; i++) {
+            gen_stmt(sym->decl->func_decl.block.stmts[i]);
+        }
+        indent_newline--;
+        genf("}\n\n");
+        break;
+    }
+
     default:
         assert(0);
     }
@@ -307,52 +346,6 @@ void gen_stmt(Stmt *stmt) {
     }
 }
 
-void gen_code(Sym *sym) {
-    // global symbols which are essentialy base types like int,void, char, float
-    // are not required.
-    if (!sym->decl) {
-        return;
-    }
-
-    switch (sym->kind) {
-    case SYM_VAR: {
-        const char *str = sym->name;
-        if (sym->type->kind == TYPE_FUNC) {
-            str = strf("*%s", str);
-        }
-
-        genf("%s", type_to_cdecl(sym->type, str));
-
-        if (sym->decl->var_decl.expr) {
-            genf(" = %s;\n", gen_expr(sym->decl->var_decl.expr));
-        } else {
-            genf(";\n");
-        }
-
-        break;
-    }
-    case SYM_CONST: {
-        genf("const %s = %d;\n", type_to_cdecl(sym->type, sym->name), sym->val);
-        break;
-    }
-    case SYM_TYPE: {
-        gen_decl(sym);
-        break;
-    }
-    case SYM_FUNC: {
-        genf("%s{\n", funcdef_to_cdef(sym->decl));
-
-        indent_newline++;
-        for (int i = 0; i < sym->decl->func_decl.block.num_stmts; i++) {
-            gen_stmt(sym->decl->func_decl.block.stmts[i]);
-        }
-        indent_newline--;
-        genf("}\n\n");
-        break;
-    }
-    }
-}
-
 void resolve_symbols() {
     // Resolve all Global symbols
     for (Sym *sym = global_syms; sym != buf_end(global_syms); sym++) {
@@ -361,7 +354,7 @@ void resolve_symbols() {
         }
     }
 
-    // Complete the types and
+    // Complete the types and functions
     for (Sym *sym = global_syms; sym != buf_end(global_syms); sym++) {
         if (sym->type) {
             complete_type(sym->type);
@@ -371,6 +364,41 @@ void resolve_symbols() {
             resolve_func_body(sym);
         }
     }
+}
+
+void forward_declare_types() {
+    genf("// Forward declared all types //\n\n");
+    // Forward declare all types
+    for (Decl **decl = ordered_decls; decl != buf_end(ordered_decls); decl++) {
+        if ((*decl)->kind == DECL_AGGREGATE) {
+            if ((*decl)->aggregate_decl.kind == AGGREGATE_STRUCT) {
+                genf("struct %s;\n", (*decl)->name);
+            } else {
+                genf("union %s;\n", (*decl)->name);
+            }
+        }
+    }
+}
+
+void forward_declare_functions() {
+    genf("\n\n// Forward declare all functions // \n\n");
+
+    for (Decl **decl = ordered_decls; decl != buf_end(ordered_decls); decl++) {
+        if ((*decl)->kind == DECL_FUNC) {
+            genf("%s;\n", type_to_cdecl((*decl)->sym->type, (*decl)->name));
+        }
+    }
+}
+
+void output_decls(DeclKind kind) {
+    for (Decl **decl = ordered_decls; decl != buf_end(ordered_decls); decl++) {
+        if ((*decl)->kind == kind) {
+            gen_decl(*decl);
+        }
+    }
+}
+
+void generate_decls() {
 }
 
 void gen_c_code(const char *code) {
@@ -383,39 +411,24 @@ void gen_c_code(const char *code) {
     }
 
     resolve_symbols();
-    genf("// Forward declared all types //\n\n");
-    // Forward declare all types
-    for (Decl **decl = ordered_decls; decl != buf_end(ordered_decls); decl++) {
-        if ((*decl)->kind == DECL_AGGREGATE) {
-            genf("%s;\n", type_to_cdecl((*decl)->sym->type, ""));
-            //            gen_code((*decl)->sym);
-        }
-    }
+    forward_declare_types();
+    output_decls(DECL_ENUM);
+    output_decls(DECL_CONST);
 
-    genf("\n\n// Types defined // \n\n");
-    // // Output types in the resolved order
-    for (Decl **decl = ordered_decls; decl != buf_end(ordered_decls); decl++) {
-        if ((*decl)->kind == DECL_AGGREGATE) {
-            gen_code((*decl)->sym);
-        }
-    }
-
-    genf("\n\n// Forward declare all functions // \n\n");
-    for (Decl **decl = ordered_decls; decl != buf_end(ordered_decls); decl++) {
-        if ((*decl)->kind == DECL_FUNC) {
-            genf("%s;\n", type_to_cdecl((*decl)->sym->type, (*decl)->name));
-        }
-    }
-
-    genf("\n\n// Generate functions in the program order // \n\n");
-    for (Decl **decl = ordered_decls; decl != buf_end(ordered_decls); decl++) {
-        switch ((*decl)->sym->kind) {
-        case SYM_VAR:
-        case SYM_CONST:
-        case SYM_FUNC:
-            gen_code((*decl)->sym);
-        }
-    }
+    output_decls(DECL_AGGREGATE);
+    output_decls(DECL_VAR);
+    /* //generate decls in resolution order */
+    /* for (Decl **decl = ordered_decls; decl != buf_end(ordered_decls); decl++) { */
+    /*     gen_decl(*decl); */
+    /* } */
+    /*     switch ((*decl)->sym->kind) { */
+    /*     case SYM_VAR: */
+    /*     case SYM_CONST: */
+    /*     case SYM_FUNC: */
+    /*         // gen_code((*decl)->sym); */
+    /*         break; */
+    /*     } */
+    /* } */
 
     printf("%s", gen_buf);
 }
@@ -527,12 +540,12 @@ void unit_test() {
     }
 
     for (Decl **decl = ordered_decls; decl != buf_end(ordered_decls); decl++) {
-        gen_code((*decl)->sym);
+        // gen_code((*decl)->sym);
     }
 
     for (Sym *sym = global_syms; sym != buf_end(global_syms); sym++) {
         if (sym->decl && sym->decl->kind == DECL_FUNC) {
-            gen_code(sym);
+            //    gen_code(sym);
         }
     }
 
