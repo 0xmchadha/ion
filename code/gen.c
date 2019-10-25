@@ -2,12 +2,13 @@ char *gen_buf = NULL;
 size_t indent_newline;
 
 #define genf(...)                                                                                  \
-    (buf_printf(gen_buf, "%.*s", 2 * indent_newline, "                                  ")),       \
+    (buf_printf(gen_buf, "%.*s", 4 * indent_newline, "                                  ")),       \
         (buf_printf(gen_buf, __VA_ARGS__))
 
 const char *type_to_cdecl(Type *t, const char *gen);
 const char *gen_expr(Expr *expr);
 void gen_stmt(Stmt *stmt);
+void gen_stmtblock(StmtBlock block);
 
 const char *type_to_cdecl(Type *t, const char *gen) {
     switch (t->kind) {
@@ -51,6 +52,42 @@ const char *type_to_cdecl(Type *t, const char *gen) {
     }
 }
 
+const char *typespec_to_cdecl(Typespec *t, const char *gen) {
+    if (!t) {
+        return strf("void %s", gen);
+    }
+
+    switch (t->kind) {
+    case TYPESPEC_NAME:
+        return strf("%s %s", t->name, gen);
+    case TYPESPEC_PTR:
+        return typespec_to_cdecl(t->ptr.type, ((gen == "") ? strf("*") : strf("*(%s)", gen)));
+    case TYPESPEC_ARRAY:
+        if (gen == "") {
+            return typespec_to_cdecl(t->array.type, strf("[%d]", gen_expr(t->array.expr)));
+        } else {
+            return typespec_to_cdecl(t->array.type, strf("(%s)[%s]", gen, gen_expr(t->array.expr)));
+        }
+    case TYPESPEC_FUNC: {
+        const char *args;
+        if (t->func.num_args == 0) {
+            args = strf("void");
+        } else {
+            args = typespec_to_cdecl(t->func.args[0], "");
+        }
+
+        for (int i = 1; i < t->func.num_args; i++) {
+            args = strf("%s, %s", args, typespec_to_cdecl(t->func.args[i], ""));
+        }
+
+        return typespec_to_cdecl(t->func.ret, strf("(%s)(%s)", gen, args));
+    }
+
+    default:
+        assert(0);
+    }
+}
+
 void gen_decl(Decl *decl) {
     Sym *sym = decl->sym;
     const char *name = decl->name;
@@ -81,7 +118,11 @@ void gen_decl(Decl *decl) {
             name = strf("*%s", name);
         }
 
-        genf("%s", type_to_cdecl(type, name));
+        if (decl->var_decl.type) {
+            genf("%s", typespec_to_cdecl(decl->var_decl.type, name));
+        } else {
+            genf("%s", type_to_cdecl(type, name));
+        }
 
         if (decl->var_decl.expr) {
             genf(" = %s;\n", gen_expr(decl->var_decl.expr));
@@ -92,17 +133,19 @@ void gen_decl(Decl *decl) {
         break;
     }
     case DECL_CONST:
-        genf("enum {%s = %d};\n", type_to_cdecl(type, name), sym->val);
+        genf("enum {%s = %s};\n", name, gen_expr(decl->const_decl.expr));
         break;
 
     case DECL_AGGREGATE: {
         const char *aggregate =
             (decl->aggregate_decl.kind == AGGREGATE_STRUCT) ? "struct" : "union";
-        genf("%s %s {\n", aggregate, type->aggregate.name);
+        genf("%s %s {\n", aggregate, decl->name);
         indent_newline++;
-        for (int i = 0; i < type->aggregate.num_fields; i++) {
-            genf("%s;\n",
-                 type_to_cdecl(type->aggregate.fields[i].type, type->aggregate.fields[i].name));
+        for (int i = 0; i < decl->aggregate_decl.num_items; i++) {
+            for (int j = 0; j < decl->aggregate_decl.items[i].num_items; j++) {
+                genf("%s;\n", typespec_to_cdecl(decl->aggregate_decl.items[i].type,
+                                                decl->aggregate_decl.items[i].names[j]));
+            }
         }
         indent_newline--;
         genf("};\n\n");
@@ -115,22 +158,16 @@ void gen_decl(Decl *decl) {
         if (decl->func_decl.num_func_args == 0) {
             args = strf("void");
         } else {
-            args = type_to_cdecl(create_type(decl->func_decl.args[0].type),
-                                 decl->func_decl.args[0].name);
+            args = typespec_to_cdecl(decl->func_decl.args[0].type, decl->func_decl.args[0].name);
         }
         for (int i = 1; i < decl->func_decl.num_func_args; i++) {
-            args = strf("%s, %s", args,
-                        type_to_cdecl(create_type(decl->func_decl.args[i].type),
-                                      decl->func_decl.args[i].name));
+            args =
+                strf("%s, %s", args,
+                     typespec_to_cdecl(decl->func_decl.args[i].type, decl->func_decl.args[i].name));
         }
-        genf("%s {\n",
-             type_to_cdecl(create_type(decl->func_decl.type), strf("%s(%s)", decl->name, args)));
-        indent_newline++;
-        for (int i = 0; i < sym->decl->func_decl.block.num_stmts; i++) {
-            gen_stmt(sym->decl->func_decl.block.stmts[i]);
-        }
-        indent_newline--;
-        genf("}\n\n");
+        genf("%s", typespec_to_cdecl(decl->func_decl.type, strf("%s(%s)", decl->name, args)));
+        gen_stmtblock(decl->func_decl.block);
+        genf("\n");
         break;
     }
 
@@ -187,7 +224,7 @@ const char *gen_expr(Expr *expr) {
         return strf("%s(%s)", gen_expr(expr->call_expr.expr), args);
     }
     case EXPR_CAST:
-        return strf("(%s)%s", type_to_cdecl(create_type(expr->cast_expr.type), ""),
+        return strf("(%s)%s", typespec_to_cdecl(expr->cast_expr.type, ""),
                     gen_expr(expr->cast_expr.expr));
     case EXPR_COMPOUND: {
         Type *type = create_type(expr->compound_expr.type);
@@ -195,7 +232,7 @@ const char *gen_expr(Expr *expr) {
             if (type == type_void) {
                 return strf("{}");
             } else {
-                return strf("(%s){}", type_to_cdecl(type, ""));
+                return strf("(%s){}", typespec_to_cdecl(expr->compound_expr.type, ""));
             }
         }
 
@@ -208,11 +245,11 @@ const char *gen_expr(Expr *expr) {
         if (type == type_void) {
             return strf("{%s}", args);
         } else {
-            return strf("(%s){%s}", type_to_cdecl(type, ""), args);
+            return strf("(%s){%s}", typespec_to_cdecl(expr->compound_expr.type, ""), args);
         }
     }
     case EXPR_SIZEOF_TYPE:
-        return strf("sizeof(%s)", type_to_cdecl(create_type(expr->sizeof_type), ""));
+        return strf("sizeof(%s)", typespec_to_cdecl(expr->sizeof_type, ""));
     case EXPR_SIZEOF_EXPR:
         return strf("sizeof(%s)", gen_expr(expr->sizeof_expr));
     case EXPR_TERNARY:
@@ -269,10 +306,10 @@ void gen_stmt(Stmt *stmt) {
         break;
     }
     case STMT_IF: {
-        genf("if (%s)", gen_expr(stmt->stmt_if.expr));
+        genf("if (%s)\n", gen_expr(stmt->stmt_if.expr));
         gen_stmtblock(stmt->stmt_if.if_block);
         for (int i = 0; i < stmt->stmt_if.num_elseifs; i++) {
-            genf("else if(%s) ", gen_expr(stmt->stmt_if.else_ifs[i].expr));
+            genf("else if(%s)\n", gen_expr(stmt->stmt_if.else_ifs[i].expr));
             gen_stmtblock(stmt->stmt_if.else_ifs[i].block);
         }
 
@@ -295,36 +332,40 @@ void gen_stmt(Stmt *stmt) {
         gen_stmtblock(stmt->stmt_while.block);
         break;
     case STMT_FOR: {
-        genf("for (");
+        const char *str;
+        str = strf("for (");
         if (stmt->stmt_for.init) {
             Stmt *init = stmt->stmt_for.init;
             if (init->kind == STMT_INIT) {
                 ResolvedExpr expr = resolve_expr(init->stmt_init.expr);
-                genf("%s; ", type_to_cdecl(expr.type, init->stmt_init.name));
+                str = strf("%s%s; ", str, type_to_cdecl(expr.type, init->stmt_init.name));
             } else if (init->kind == STMT_ASSIGN) {
-                genf("%s %s %s;", gen_expr(init->stmt_assign.left_expr),
-                     token_kind_name(init->stmt_assign.op), gen_expr(init->stmt_assign.right_expr));
+                str = strf("%s%s %s %s;", str, gen_expr(init->stmt_assign.left_expr),
+                           token_kind_name(init->stmt_assign.op),
+                           gen_expr(init->stmt_assign.right_expr));
             } else {
                 assert(0);
             }
         } else {
-            genf("; ");
+            str = strf("%s; ", str);
         }
 
-        genf("%s; ", gen_expr(stmt->stmt_for.cond));
+        str = strf("%s%s; ", str, gen_expr(stmt->stmt_for.cond));
 
         if (stmt->stmt_for.next) {
             Stmt *next = stmt->stmt_for.next;
             assert(next->kind == STMT_ASSIGN);
-            genf("%s %s %s", gen_expr(next->stmt_assign.left_expr),
-                 token_kind_name(next->stmt_assign.op), gen_expr(next->stmt_assign.right_expr));
+            str =
+                strf("%s%s %s %s", str, gen_expr(next->stmt_assign.left_expr),
+                     token_kind_name(next->stmt_assign.op), gen_expr(next->stmt_assign.right_expr));
         }
-        genf(")");
+        str = strf("%s)", str);
+        genf("%s\n", str);
         gen_stmtblock(stmt->stmt_for.block);
         break;
     }
     case STMT_SWITCH: {
-        genf("switch (%s) {", gen_expr(stmt->stmt_switch.expr));
+        genf("switch (%s) {\n", gen_expr(stmt->stmt_switch.expr));
         indent_newline++;
         for (int i = 0; i < stmt->stmt_switch.num_cases; i++) {
             for (int j = 0; j < stmt->stmt_switch.cases[i].num_exprs; j++) {
@@ -337,7 +378,7 @@ void gen_stmt(Stmt *stmt) {
             gen_stmtblock(stmt->stmt_switch.cases[i].block);
         }
         indent_newline--;
-        genf("}");
+        genf("}\n");
         break;
     }
     default:
@@ -372,9 +413,9 @@ void forward_declare_types() {
     for (Decl **decl = ordered_decls; decl != buf_end(ordered_decls); decl++) {
         if ((*decl)->kind == DECL_AGGREGATE) {
             if ((*decl)->aggregate_decl.kind == AGGREGATE_STRUCT) {
-                genf("struct %s;\n", (*decl)->name);
+                genf("typedef struct %s %s;\n", (*decl)->name, (*decl)->name);
             } else {
-                genf("union %s;\n", (*decl)->name);
+                genf("typedef union %s %s;\n", (*decl)->name, (*decl)->name);
             }
         }
     }
@@ -390,15 +431,7 @@ void forward_declare_functions() {
     }
 }
 
-void output_decls(DeclKind kind) {
-    for (Decl **decl = ordered_decls; decl != buf_end(ordered_decls); decl++) {
-        if ((*decl)->kind == kind) {
-            gen_decl(*decl);
-        }
-    }
-}
-
-void generate_decls() {
+void output_decls() {
 }
 
 void gen_c_code(const char *code) {
@@ -412,23 +445,25 @@ void gen_c_code(const char *code) {
 
     resolve_symbols();
     forward_declare_types();
-    output_decls(DECL_ENUM);
-    output_decls(DECL_CONST);
 
-    output_decls(DECL_AGGREGATE);
-    output_decls(DECL_VAR);
-    /* //generate decls in resolution order */
-    /* for (Decl **decl = ordered_decls; decl != buf_end(ordered_decls); decl++) { */
-    /*     gen_decl(*decl); */
-    /* } */
-    /*     switch ((*decl)->sym->kind) { */
-    /*     case SYM_VAR: */
-    /*     case SYM_CONST: */
-    /*     case SYM_FUNC: */
-    /*         // gen_code((*decl)->sym); */
-    /*         break; */
-    /*     } */
-    /* } */
+    // generate decls other than funcs in resolved order
+    for (Decl **decl = ordered_decls; decl != buf_end(ordered_decls); decl++) {
+        if ((*decl)->kind != DECL_FUNC) {
+            gen_decl(*decl);
+        }
+    }
+
+    // forward decl func's.
+    for (Decl **decl = ordered_decls; decl != buf_end(ordered_decls); decl++) {
+        if ((*decl)->kind == DECL_FUNC) {
+        }
+    }
+
+    for (Decl **decl = ordered_decls; decl != buf_end(ordered_decls); decl++) {
+        if ((*decl)->kind == DECL_FUNC) {
+            gen_decl(*decl);
+        }
+    }
 
     printf("%s", gen_buf);
 }
@@ -462,7 +497,6 @@ void gen_test() {
         "var p: T*\n"
         "struct T { a: int[n]; }\n"
         "var q:int[sizeof(:IntOrPtr)]";
-
     gen_c_code(code);
 }
 
