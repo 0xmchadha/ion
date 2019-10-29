@@ -59,7 +59,7 @@ const char *typespec_to_cdecl(Typespec *t, const char *gen) {
 
     switch (t->kind) {
     case TYPESPEC_NAME:
-        return strf("%s %s", t->name, gen);
+        return (gen == "") ? strf("%s", t->name) : strf("%s %s", t->name, gen);
     case TYPESPEC_PTR:
         return typespec_to_cdecl(t->ptr.type, ((gen == "") ? strf("*") : strf("*(%s)", gen)));
     case TYPESPEC_ARRAY:
@@ -281,7 +281,8 @@ void gen_stmt(Stmt *stmt) {
 
     case STMT_INIT: {
         ResolvedExpr expr = resolve_expr(stmt->stmt_init.expr);
-        genf("%s;\n", type_to_cdecl(expr.type, stmt->stmt_init.name));
+        genf("%s = %s;\n", type_to_cdecl(expr.type, stmt->stmt_init.name),
+             gen_expr(stmt->stmt_init.expr));
         break;
     }
     case STMT_ASSIGN:
@@ -469,6 +470,7 @@ void gen_c_code(const char *code) {
 }
 
 void gen_test() {
+
     const char *code =
         "func example_test(): int { return fact_rec(10) == fact_iter(10); }\n"
         "union IntOrPtr { i: int; p: int*; }\n"
