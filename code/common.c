@@ -32,6 +32,7 @@ void *xrealloc(void *ptr, size_t num_bytes) {
     ptr = realloc(ptr, num_bytes);
 
     if (!ptr) {
+        assert(0);
         perror("realloc failed\n");
         exit(1);
     }
@@ -64,14 +65,31 @@ const char *strf(const char *fmt, ...) {
 
 void *buf_grow(void *_buf, int elem_size) {
     struct BufHdr *buf;
+
     if (!_buf) {
         buf = xmalloc(sizeof(struct BufHdr) + elem_size);
         buf->len = 0;
         buf->cap = 1;
     } else {
         buf = buf__hdr(_buf);
-        buf = xrealloc(buf, sizeof(struct BufHdr) + buf->cap * 2 * elem_size);
+        buf = xrealloc(buf, sizeof(struct BufHdr) + (buf->cap * elem_size) * 2);
         buf->cap = buf->cap * 2;
+    }
+
+    return (char *) buf + offsetof(struct BufHdr, buf_);
+}
+
+void *print_buf_grow(void *_buf, int new_size) {
+    struct BufHdr *buf;
+
+    if (!_buf) {
+        buf = xmalloc(sizeof(struct BufHdr) + new_size);
+        buf->len = 0;
+        buf->cap = new_size;
+    } else {
+        buf = buf__hdr(_buf);
+        buf = xrealloc(buf, sizeof(struct BufHdr) + new_size);
+        buf->cap = new_size;
     }
 
     return (char *) buf + offsetof(struct BufHdr, buf_);
@@ -84,7 +102,7 @@ char *buf__printf(char *buf, const char *fmt, ...) {
     va_end(args);
 
     if (buf_cap(buf) < buf_len(buf) + n) {
-        buf = buf_grow(buf, buf_len(buf) + n);
+        buf = print_buf_grow(buf, buf_len(buf) + n);
     }
 
     va_start(args, fmt);
@@ -94,7 +112,7 @@ char *buf__printf(char *buf, const char *fmt, ...) {
     return buf;
 }
 
-#define ARENA_BLOCK_SIZE 1024
+#define ARENA_BLOCK_SIZE (1 << 21)
 #define ARENA_ALIGNMENT 8
 
 #define POW_OF_2(n) (((n) & (n) -1) == 0)
@@ -157,6 +175,52 @@ void arena_test() {
     assert(arena.ptr == ptr2 + ARENA_ALIGNMENT);
 }
 
+const char *read_file(const char *path) {
+    FILE *fp = fopen(path, "r");
+    assert(fp);
+    fseek(fp, 0L, SEEK_END);
+    size_t size = ftell(fp);
+    fseek(fp, 0L, SEEK_SET);
+    char *str = xmalloc(size + 1);
+    size_t read = 0;
+
+    while (read != size) {
+        read += fread(&str[read], 1, size - read, fp);
+    }
+
+    str[size] = '\0';
+    return str;
+}
+
+void write_file(const char *path, const char *data, size_t length) {
+    FILE *fp = fopen(path, "w+");
+    assert(fp);
+    size_t written = 0;
+
+    while (written != length) {
+        written += fwrite(&data[written], 1, length - written, fp);
+    }
+}
+
+const char *replace_ext(const char *path, const char *ext) {
+    size_t len = 0;
+
+    while (path[len] != '\0' && path[len] != '.') {
+        len++;
+    }
+
+    if (path[len] == '\0') {
+        return NULL;
+    }
+
+    len++;
+    char *newstr = xmalloc(len + strlen(ext) + 1);
+    strncpy(newstr, path, len);
+    strncpy(&newstr[len], ext, strlen(ext) + 1);
+
+    return newstr;
+}
+
 void buf_test() {
     int *buf = NULL;
 
@@ -183,10 +247,9 @@ void buf_test() {
         buf_print = buf__printf(buf_print, "%s", "hello");
         buf_print = buf__printf(buf_print, " %s", "world");
 
-        printf("%s", buf_print);
-        /* if (strcmp(buf_print, "hello world")) { */
-        /*     assert(0); */
-        /* } */
+        if (strcmp(buf_print, "hello world")) {
+            assert(0);
+        }
     }
 
     printf("buf test passed\n");
@@ -258,4 +321,6 @@ void syntax__error(const char *fmt, int line, char *file, ...) {
 void common_test() {
     buf_test();
     str_intern_test();
+
+    read_file("test.ion");
 }

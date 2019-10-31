@@ -135,7 +135,7 @@ void create_base_types() {
                                 .type = type_float});
 }
 
-void create_global_decl(Decl *decl) {
+void install_global_decl(Decl *decl) {
     if (sym_get(decl->name) != NULL) {
         fatal("symbol %s already exists", decl->name);
     }
@@ -1131,6 +1131,12 @@ void resolve_func_body(Sym *sym) {
     scope_leave(scope_start);
 }
 
+void install_global_decls(DeclSet *declset) {
+    for (int i = 0; i < declset->num_decls; i++) {
+        install_global_decl(declset->decls[i]);
+    }
+}
+
 void resolve_test() {
     const char *decl[] = {
 
@@ -1223,7 +1229,7 @@ void resolve_test() {
         init_stream(decl[i]);
         Decl *d = parse_decl_opt();
         assert(d);
-        create_global_decl(d);
+        install_global_decl(d);
     }
 
     for (Sym *sym = global_syms; sym != buf_end(global_syms); sym++) {

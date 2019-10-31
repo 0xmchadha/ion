@@ -26,10 +26,15 @@
 
 #include "gen.c"
 
-int main() {
-    common_test();
-    lex_test();
-    // print_decl_test();
-    // resolve_test();
-    gen_test();
+#include "ion.c"
+
+int main(int argc, char **argv) {
+    ///common_test(); 
+    //    lex_test(); 
+    /* print_decl_test(); */
+    /* resolve_test(); */
+    //gen_test();
+
+    //common_test();
+    ion_main(argc, argv);
 }

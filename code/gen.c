@@ -432,39 +432,35 @@ void forward_declare_functions() {
     }
 }
 
-void output_decls() {
-}
-
-void gen_c_code(const char *code) {
-    Decl *d;
-
-    create_base_types();
-    init_stream(code);
-    while (d = parse_decl_opt()) {
-        create_global_decl(d);
-    }
-
-    resolve_symbols();
-    forward_declare_types();
-
+void generate_types() {
     // generate decls other than funcs in resolved order
     for (Decl **decl = ordered_decls; decl != buf_end(ordered_decls); decl++) {
         if ((*decl)->kind != DECL_FUNC) {
             gen_decl(*decl);
         }
     }
+}
 
-    // forward decl func's.
-    for (Decl **decl = ordered_decls; decl != buf_end(ordered_decls); decl++) {
-        if ((*decl)->kind == DECL_FUNC) {
-        }
-    }
-
+void generate_functions() {
     for (Decl **decl = ordered_decls; decl != buf_end(ordered_decls); decl++) {
         if ((*decl)->kind == DECL_FUNC) {
             gen_decl(*decl);
         }
     }
+}
+
+void gen_c_code(const char *code) {
+    init_stream(code);
+
+    create_base_types();
+    install_global_decls(parse_file());
+
+    resolve_symbols();
+
+    forward_declare_types();
+    generate_types();
+    forward_declare_functions();
+    generate_functions();
 
     printf("%s", gen_buf);
 }
@@ -485,6 +481,7 @@ void gen_test() {
         "func fact_iter(n: int): int { r := 1; for (i := 2; i <= n; i++) { r *= i; } return r; }\n"
         "func fact_rec(n: int): int { if (n == 0) { return 1; } else { return n * fact_rec(n-1); } "
         "}\n"
+#if 0
         "func f1() { v := Vector{1, 2}; j := i; i++; j++; v.x = 2*j; }\n"
         "func f2(n: int): int { return 2*n; }\n"
         "func f3(x: int): int { if (x) { return -x; } else if (x % 2 == 0) { return 42; } else { "
@@ -495,6 +492,7 @@ void gen_test() {
         "} }\n"
         "func f6(n: int): int { p := 1; while (n) { p *= 2; n--; } return p; }\n"
         "func f7(n: int): int { p := 1; do { p *= 2; n--; } while (n); return p; }\n"
+#endif
         "const n = 1+sizeof(p)\n"
         "var p: T*\n"
         "struct T { a: int[n]; }\n"
@@ -556,7 +554,7 @@ void unit_test() {
     for (int i = 0; i < sizeof(decl) / sizeof(*decl); i++) {
         init_stream(decl[i]);
         Decl *d = parse_decl_opt();
-        create_global_decl(d);
+        install_global_decl(d);
     }
 
     for (Sym *sym = global_syms; sym != buf_end(global_syms); sym++) {
@@ -572,16 +570,6 @@ void unit_test() {
 
         if (sym->decl && sym->decl->kind == DECL_FUNC) {
             resolve_func_body(sym);
-        }
-    }
-
-    for (Decl **decl = ordered_decls; decl != buf_end(ordered_decls); decl++) {
-        // gen_code((*decl)->sym);
-    }
-
-    for (Sym *sym = global_syms; sym != buf_end(global_syms); sym++) {
-        if (sym->decl && sym->decl->kind == DECL_FUNC) {
-            //    gen_code(sym);
         }
     }
 

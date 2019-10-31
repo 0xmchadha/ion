@@ -656,6 +656,7 @@ bool match_keyword(const char *keyword) {
 }
 
 static void init_stream(const char *str) {
+    init_keywords();
     stream = str;
     next_token();
 }

@@ -60,7 +60,7 @@ typedef struct SwitchCase {
     size_t num_exprs;
     bool is_default;
     StmtBlock block;
-}SwitchCase;
+} SwitchCase;
 
 typedef struct StmtSwitch {
     Expr *expr;
@@ -299,3 +299,8 @@ typedef struct Typespec {
         ArrayTypespec array;
     };
 } Typespec;
+
+typedef struct DeclSet {
+    Decl **decls;
+    size_t num_decls;
+} DeclSet;

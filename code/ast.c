@@ -324,3 +324,10 @@ Stmt *stmt_decl(Decl *decl) {
     stmt->decl = decl;
     return stmt;
 }
+
+DeclSet *decl_set(Decl **decls, size_t num_decls) {
+    DeclSet *declset = ast_alloc(sizeof(DeclSet));
+    declset->decls = AST_DUP(decls);
+    declset->num_decls = num_decls;
+    return declset;
+}

@@ -51,7 +51,7 @@ void print_expr(Expr *expr) {
         assert(0);
         break;
     case EXPR_INT:
-        printf("%llu", expr->int_val);
+        printf("%lu", expr->int_val);
         break;
     case EXPR_FLOAT:
         printf("%lf", expr->float_val);

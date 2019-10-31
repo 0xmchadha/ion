@@ -687,3 +687,14 @@ Stmt *parse_stmt() {
         }
     }
 }
+
+DeclSet *parse_file() {
+    Decl **decls = NULL;
+    Decl *d;
+
+    while (d = parse_decl_opt()) {
+        buf_push(decls, d);
+    }
+    
+    return decl_set(decls, buf_len(decls));
+}
