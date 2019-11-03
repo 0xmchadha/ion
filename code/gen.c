@@ -315,12 +315,9 @@ void gen_stmt(Stmt *stmt) {
         }
 
         if (stmt->stmt_if.else_block.num_stmts) {
-            genf("else {\n");
+            genf("else \n");
             gen_stmtblock(stmt->stmt_if.else_block);
-            genf("}");
         }
-
-        genf("\n");
         break;
     }
     case STMT_DO_WHILE:
@@ -390,20 +387,20 @@ void gen_stmt(Stmt *stmt) {
 
 void resolve_symbols() {
     // Resolve all Global symbols
-    for (Sym *sym = global_syms; sym != buf_end(global_syms); sym++) {
-        if (sym->decl) {
-            resolve_global_sym(sym);
+    for (Sym **sym = global_sym_list; sym != buf_end(global_sym_list); sym++) {
+        if ((*sym)->decl) {
+            resolve_global_sym(*sym);
         }
     }
 
     // Complete the types and functions
-    for (Sym *sym = global_syms; sym != buf_end(global_syms); sym++) {
-        if (sym->type) {
-            complete_type(sym->type);
+    for (Sym **sym = global_sym_list; sym != buf_end(global_sym_list); sym++) {
+        if ((*sym)->type) {
+            complete_type((*sym)->type);
         }
 
-        if (sym->decl && sym->decl->kind == DECL_FUNC) {
-            resolve_func_body(sym);
+        if ((*sym)->decl && (*sym)->decl->kind == DECL_FUNC) {
+            resolve_func_body(*sym);
         }
     }
 }
@@ -450,7 +447,7 @@ void generate_functions() {
 }
 
 void gen_c_code(const char *code) {
-    init_stream(code);
+    init_stream(NULL, code);
 
     create_base_types();
     install_global_decls(parse_file());
@@ -552,24 +549,24 @@ void unit_test() {
     create_base_types();
 
     for (int i = 0; i < sizeof(decl) / sizeof(*decl); i++) {
-        init_stream(decl[i]);
+        init_stream(NULL, decl[i]);
         Decl *d = parse_decl_opt();
         install_global_decl(d);
     }
 
-    for (Sym *sym = global_syms; sym != buf_end(global_syms); sym++) {
-        if (sym->decl) {
-            resolve_global_sym(sym);
+    for (Sym **sym = global_sym_list; sym != buf_end(global_sym_list); sym++) {
+        if ((*sym)->decl) {
+            resolve_global_sym(*sym);
         }
     }
 
-    for (Sym *sym = global_syms; sym != buf_end(global_syms); sym++) {
-        if (sym->type) {
-            complete_type(sym->type);
+    for (Sym **sym = global_sym_list; sym != buf_end(global_sym_list); sym++) {
+        if ((*sym)->type) {
+            complete_type((*sym)->type);
         }
 
-        if (sym->decl && sym->decl->kind == DECL_FUNC) {
-            resolve_func_body(sym);
+        if ((*sym)->decl && (*sym)->decl->kind == DECL_FUNC) {
+            resolve_func_body(*sym);
         }
     }
 

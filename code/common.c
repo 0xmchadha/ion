@@ -1,3 +1,5 @@
+#define MAX(a, b) ((a) > (b) ? (a) : (b))
+
 typedef struct BufHdr {
     size_t len;
     size_t cap;
@@ -160,21 +162,6 @@ void *arena_alloc(Arena *arena, size_t size) {
     return ptr;
 }
 
-void arena_test() {
-    Arena arena = {0};
-    char *ptr1, *ptr2;
-    ptr1 = arena_alloc(&arena, 5);
-
-    assert(ptr1 == ALIGN_DOWN_PTR(ptr1, ARENA_ALIGNMENT));
-    assert(arena.end == ptr1 + ARENA_BLOCK_SIZE);
-    assert(arena.ptr == ptr1 + ARENA_ALIGNMENT);
-
-    ptr2 = arena_alloc(&arena, 5);
-    assert(ptr2 == ALIGN_DOWN_PTR(ptr2, ARENA_ALIGNMENT));
-    assert(arena.end == ptr1 + ARENA_BLOCK_SIZE);
-    assert(arena.ptr == ptr2 + ARENA_ALIGNMENT);
-}
-
 const char *read_file(const char *path) {
     FILE *fp = fopen(path, "r");
     assert(fp);
@@ -221,6 +208,160 @@ const char *replace_ext(const char *path, const char *ext) {
     return newstr;
 }
 
+typedef struct Map {
+    const void **key;
+    const void **val;
+    size_t len;
+    size_t cap;
+} Map;
+
+void map_put(Map *map, const void *key, const void *val);
+
+uint64_t hash_uint64(uint64_t key) {
+    key *= 0xff51afd7ed558ccd;
+    key ^= key >> 32;
+    return key;
+}
+
+uint64_t hash_ptr(const void *key) {
+    return hash_uint64((uint64_t)key);
+}
+
+void map_grow(Map *map) {
+    size_t new_size = MAX(16, 2 * map->cap);
+
+    Map new_map = {
+        .key = xcalloc(new_size * sizeof(void *)),
+        .val = xcalloc(new_size * sizeof(void *)),
+        .len = 0,
+        .cap = new_size,
+    };
+
+    for (size_t h = 0; h < map->cap; h++) {
+        if (map->key[h]) {
+            map_put(&new_map, map->key[h], map->val[h]);
+        }
+    }
+
+    free(map->key);
+    free(map->val);
+    
+    *map = new_map;
+}
+
+const void *map_get(Map *map, const void *key) {
+    assert(key);
+    if (!map->cap) {
+        return NULL;
+    }
+    
+    uint64_t h = hash_ptr(key) % map->cap;
+    while (map->key[h] && map->key[h] != key) {
+        h = (h + 1) % map->cap;
+    }
+
+    if (map->key[h] == key) {
+        return map->val[h];
+    }
+
+    return NULL;
+}
+
+void map_put(Map *map, const void *key, const void *val) {
+    assert(key);
+    assert(val);
+
+    if (map->len * 2 >= map->cap) {
+        map_grow(map);
+    }
+
+    uint64_t h = hash_ptr(key) & (map->cap-1);
+
+    while (map->key[h] && map->key[h] != key) {
+        // when capacity is power of 2 the following trick can be used.
+        h = (h+1) & (map->cap-1); 
+    }
+
+    if (map->key[h] != key) {
+        map->len++;
+    }
+
+    map->key[h] = key;
+    map->val[h] = val;
+}
+
+struct internStr {
+    size_t len;
+    char *str;
+};
+
+struct internStr *interns = NULL;
+Arena str_arena;
+
+Map str_intern_map;
+
+uint64_t hash_str(const char *start, const char *end) {
+    uint64_t h = 0xcbf29ce484222325;
+
+    for (const char *it = start; it != end; it++) {
+        h ^= *it;
+        h *= 0x100000001b3;
+        h ^= h >> 32;
+    }
+
+    return h;
+}
+
+const char *str_intern_range(const char *start, const char *end) {
+    size_t len = end - start;
+    size_t i;
+
+    uint64_t hash = hash_str(start, end);
+    hash = (!hash) ? 1 : hash;
+    char *strp = NULL;
+    
+    if (strp = (char *)map_get(&str_intern_map, (void *)hash)) {
+        if (!strncmp(strp, start, len)) {
+            return strp;
+        }
+    }
+
+    strp = arena_alloc(&str_arena, len + 1);
+    strncpy(strp, start, len);
+    strp[len] = '\0';
+
+    map_put(&str_intern_map, (void*)hash, strp);
+    buf_push(interns, ((struct internStr){len, strp}));
+
+    return strp;
+}
+
+const char *str_intern(const char *str) {
+    return str_intern_range(str, str + strlen(str));
+}
+
+void fatal(const char *fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+    printf("FATAL: ");
+    vprintf(fmt, args);
+    printf("\n");
+    va_end(args);
+    exit(1);
+}
+
+void map_test() {
+    Map map = {};
+    for (uint64_t i = 1; i < 1024; i++) {
+        map_put(&map, (void *)i, (void *)i);
+    }
+
+    for (uint64_t i = 1; i < 1024; i++) {
+        void *val = (void *)map_get(&map, (void *)i);
+        assert((uint64_t)val == (uint64_t)i);
+    }
+}
+
 void buf_test() {
     int *buf = NULL;
 
@@ -255,37 +396,6 @@ void buf_test() {
     printf("buf test passed\n");
 }
 
-struct internStr {
-    size_t len;
-    char *str;
-};
-
-struct internStr *interns = NULL;
-Arena str_arena;
-
-const char *str_intern_range(const char *start, const char *end) {
-    size_t len = end - start;
-    size_t i;
-
-    for (i = 0; i < buf_len(interns); i++) {
-        if (interns[i].len == len && !strncmp(interns[i].str, start, len)) {
-            return interns[i].str;
-        }
-    }
-
-    char *strp = arena_alloc(&str_arena, len + 1);
-    strncpy(strp, start, len);
-    strp[len] = '\0';
-
-    buf_push(interns, ((struct internStr){len, strp}));
-
-    return interns[i].str;
-}
-
-const char *str_intern(const char *str) {
-    return str_intern_range(str, str + strlen(str));
-}
-
 void str_intern_test() {
     char a[] = "hello";
     char b[] = "hello";
@@ -297,30 +407,25 @@ void str_intern_test() {
     printf("string intern test passed\n");
 }
 
-void fatal(const char *fmt, ...) {
-    va_list args;
-    va_start(args, fmt);
-    printf("FATAL: ");
-    vprintf(fmt, args);
-    printf("\n");
-    va_end(args);
-    exit(1);
-}
+void arena_test() {
+    Arena arena = {0};
+    char *ptr1, *ptr2;
+    ptr1 = arena_alloc(&arena, 5);
 
-#define syntax_error(fmt, ...) syntax__error(fmt, __LINE__, __FILE__)
+    assert(ptr1 == ALIGN_DOWN_PTR(ptr1, ARENA_ALIGNMENT));
+    assert(arena.end == ptr1 + ARENA_BLOCK_SIZE);
+    assert(arena.ptr == ptr1 + ARENA_ALIGNMENT);
 
-void syntax__error(const char *fmt, int line, char *file, ...) {
-    va_list args;
-    va_start(args, file);
-    printf("Syntax Error: %d %s ", line, file);
-    vprintf(fmt, args);
-    printf("\n");
-    va_end(args);
+    ptr2 = arena_alloc(&arena, 5);
+    assert(ptr2 == ALIGN_DOWN_PTR(ptr2, ARENA_ALIGNMENT));
+    assert(arena.end == ptr1 + ARENA_BLOCK_SIZE);
+    assert(arena.ptr == ptr2 + ARENA_ALIGNMENT);
 }
 
 void common_test() {
+    arena_test();
     buf_test();
     str_intern_test();
-
+    map_test();
     read_file("test.ion");
 }

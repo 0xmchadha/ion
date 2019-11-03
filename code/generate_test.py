@@ -6,14 +6,14 @@ func example_test(?)(): int {
 union IntOrPtr(?) {
     i: int;
     p: int*;
-}        
+}
 
 func f(?)() {
     u1 := IntOrPtr(?){i = 42};
     u2 := IntOrPtr(?){p = cast(int*, 42)};
     u1.i = 0;
     u2.p = cast(int*, 0);
-}           
+}
 
 var i(?): int
 
@@ -21,7 +21,7 @@ struct Vector(?) {
     x: int;
     y: int;
 }
-        
+
 func fact_iter(?)(n: int): int {
     r := 1;
     for (i := 2; i <= n; i++) {
@@ -35,7 +35,7 @@ func fact_rec(?)(n: int): int {
         return 1;
     } else {
          return n * fact_rec(?)(n-1);
-    } 
+    }
 }
 
 const n(?) = 1+sizeof(p(?))
@@ -47,5 +47,5 @@ struct T(?) {
 
 import re
 
-for i in range (1024):
+for i in range (16*1024):
     print(re.sub("\(\?\)", str(i), template))

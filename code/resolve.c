@@ -98,7 +98,8 @@ const size_t PTR_SIZE = 8;
 const size_t PTR_ALIGNMENT = 8;
 
 Decl **ordered_decls;
-Sym *global_syms;
+Map global_sym_map;
+Sym **global_sym_list;
 
 typedef struct ResolvedExpr {
     Type *type;
@@ -115,24 +116,26 @@ Type *type_func(Type **args, size_t num_args, Type *ret_type);
 Sym *sym_get(const char *name);
 void resolve_stmt(Stmt *stmt, Type *expected_type, Sym *scope_start);
 
-void create_base_types() {
-    buf_push(global_syms, (Sym){.name = str_intern("void"),
-                                .state = SYM_RESOLVED,
-                                .kind = SYM_TYPE,
-                                .type = type_void});
-    buf_push(global_syms, (Sym){.name = str_intern("int"),
-                                .state = SYM_RESOLVED,
-                                .kind = SYM_TYPE,
-                                .type = type_int});
-    buf_push(global_syms, (Sym){.name = str_intern("char"),
-                                .state = SYM_RESOLVED,
-                                .kind = SYM_TYPE,
-                                .type = type_char});
+void insert_global_syms(Sym sym) {
+    Sym *sym_alloc = xmalloc(sizeof(Sym));
+    *sym_alloc = sym;
 
-    buf_push(global_syms, (Sym){.name = str_intern("float"),
-                                .state = SYM_RESOLVED,
-                                .kind = SYM_TYPE,
-                                .type = type_float});
+    map_put(&global_sym_map, sym.name, sym_alloc);
+    buf_push(global_sym_list, sym_alloc);
+}
+
+void create_base_types() {
+    insert_global_syms((Sym){
+        .name = str_intern("void"), .state = SYM_RESOLVED, .kind = SYM_TYPE, .type = type_void});
+
+    insert_global_syms((Sym){
+        .name = str_intern("int"), .state = SYM_RESOLVED, .kind = SYM_TYPE, .type = type_int});
+
+    insert_global_syms((Sym){
+        .name = str_intern("char"), .state = SYM_RESOLVED, .kind = SYM_TYPE, .type = type_char});
+
+    insert_global_syms((Sym){
+        .name = str_intern("float"), .state = SYM_RESOLVED, .kind = SYM_TYPE, .type = type_float});
 }
 
 void install_global_decl(Decl *decl) {
@@ -144,13 +147,12 @@ void install_global_decl(Decl *decl) {
 
     switch (decl->kind) {
     case DECL_CONST:
-        buf_push(
-            global_syms,
+        insert_global_syms(
             (Sym){.name = decl->name, .kind = SYM_CONST, .decl = decl, .state = SYM_UNRESOLVED});
         break;
     case DECL_VAR:
-        buf_push(global_syms,
-                 (Sym){.name = decl->name, .kind = SYM_VAR, .decl = decl, .state = SYM_UNRESOLVED});
+        insert_global_syms(
+            (Sym){.name = decl->name, .kind = SYM_VAR, .decl = decl, .state = SYM_UNRESOLVED});
         break;
     case DECL_AGGREGATE:
         type_aggregate =
@@ -159,37 +161,35 @@ void install_global_decl(Decl *decl) {
         type_aggregate->state = TYPE_UNRESOLVED;
         type_aggregate->name = decl->name;
 
-        buf_push(global_syms, (Sym){.name = decl->name,
-                                    .kind = SYM_TYPE,
-                                    .decl = decl,
-                                    .state = SYM_UNRESOLVED,
-                                    .type = type_aggregate});
+        insert_global_syms((Sym){.name = decl->name,
+                                 .kind = SYM_TYPE,
+                                 .decl = decl,
+                                 .state = SYM_UNRESOLVED,
+                                 .type = type_aggregate});
         break;
     case DECL_FUNC:
-        buf_push(
-            global_syms,
+        insert_global_syms(
             (Sym){.name = decl->name, .kind = SYM_FUNC, .decl = decl, .state = SYM_UNRESOLVED});
         break;
     case DECL_ENUM: {
-        buf_push(global_syms, (Sym){.name = decl->name,
-                                    .kind = SYM_TYPE,
-                                    .decl = decl,
-                                    .type = type_int,
-                                    .state = SYM_UNRESOLVED});
+        insert_global_syms((Sym){.name = decl->name,
+                                 .kind = SYM_TYPE,
+                                 .decl = decl,
+                                 .type = type_int,
+                                 .state = SYM_UNRESOLVED});
 
         for (int i = 0; i < decl->enum_decl.num_enum_items; i++) {
-            buf_push(global_syms, (Sym){.name = decl->enum_decl.items[i].name,
-                                        .kind = SYM_ENUM_MEM,
-                                        .decl = decl,
-                                        .type = type_int,
-                                        .state = SYM_UNRESOLVED,
-                                        .enum_decl = decl->name});
+            insert_global_syms((Sym){.name = decl->enum_decl.items[i].name,
+                                     .kind = SYM_ENUM_MEM,
+                                     .decl = decl,
+                                     .type = type_int,
+                                     .state = SYM_UNRESOLVED,
+                                     .enum_decl = decl->name});
         }
         break;
     }
     case DECL_TYPEDEF:
-        buf_push(
-            global_syms,
+        insert_global_syms(
             (Sym){.name = decl->name, .kind = SYM_TYPE, .decl = decl, .state = SYM_UNRESOLVED});
         break;
     }
@@ -200,7 +200,8 @@ typedef struct CachedPtrTypes {
     Type *ptr;
 } CachedPtrTypes;
 
-CachedPtrTypes *cached_ptr_types;
+//CachedPtrTypes *cached_ptr_types;
+Map cached_ptr_types;
 
 Type *type_alloc(TypeKind kind) {
     Type *type = xcalloc(sizeof(Type));
@@ -209,17 +210,18 @@ Type *type_alloc(TypeKind kind) {
 }
 
 Type *type_ptr(Type *elem) {
-    for (int i = 0; i < buf_len(cached_ptr_types); i++) {
-        if (cached_ptr_types[i].elem == elem) {
-            return cached_ptr_types[i].ptr;
-        }
+    Type *ptr;
+
+    if ((ptr = (Type *)map_get(&cached_ptr_types, elem))) {
+        return ptr;
     }
 
-    Type *ptr = type_alloc(TYPE_PTR);
+     ptr = type_alloc(TYPE_PTR);
     ptr->ptr.elem = elem;
     ptr->size = PTR_SIZE;
     ptr->alignment = PTR_ALIGNMENT;
-    buf_push(cached_ptr_types, (CachedPtrTypes){elem, ptr});
+
+    map_put(&cached_ptr_types, elem, ptr);
     return ptr;
 }
 
@@ -318,8 +320,6 @@ Type *create_type(Typespec *type) {
     return NULL;
 }
 
-#define MAX(a, b) (((a) > (b)) ? (a) : (b))
-
 void complete_struct_type(Type *type) {
     size_t size = 0;
     size_t alignment = 0;
@@ -359,7 +359,7 @@ void complete_type(Type *type) {
     if (type->kind != TYPE_STRUCT && type->kind != TYPE_UNION) {
         return;
     }
-    
+
     if (type->state == TYPE_RESOLVING) {
         fatal("Illegal value cycle while resolving %s\n", type->name);
         return;
@@ -975,13 +975,7 @@ Sym *sym_get(const char *name) {
         }
     }
 
-    for (Sym *sym = global_syms; sym != buf_end(global_syms); sym++) {
-        if (sym->name == name) {
-            return sym;
-        }
-    }
-
-    return NULL;
+    return (Sym *) map_get(&global_sym_map, name);
 }
 
 void resolve_stmtblock(StmtBlock block, Type *expected_type, Sym *scope_start) {
@@ -1226,25 +1220,25 @@ void resolve_test() {
     create_base_types();
 
     for (int i = 0; i < sizeof(decl) / sizeof(*decl); i++) {
-        init_stream(decl[i]);
+        init_stream(NULL, decl[i]);
         Decl *d = parse_decl_opt();
         assert(d);
         install_global_decl(d);
     }
 
-    for (Sym *sym = global_syms; sym != buf_end(global_syms); sym++) {
-        if (sym->decl) {
-            resolve_global_sym(sym);
+    for (Sym **sym = global_sym_list; sym != buf_end(global_sym_list); sym++) {
+        if ((*sym)->decl) {
+            resolve_global_sym(*sym);
         }
     }
 
-    for (Sym *sym = global_syms; sym != buf_end(global_syms); sym++) {
-        if (sym->type) {
-            complete_type(sym->type);
+    for (Sym **sym = global_sym_list; sym != buf_end(global_sym_list); sym++) {
+        if ((*sym)->type) {
+            complete_type((*sym)->type);
         }
 
-        if (sym->decl && sym->decl->kind == DECL_FUNC) {
-            resolve_func_body(sym);
+        if ((*sym)->decl && (*sym)->decl->kind == DECL_FUNC) {
+            resolve_func_body(*sym);
         }
     }
 

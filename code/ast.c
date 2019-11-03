@@ -20,6 +20,7 @@ void *ast_dup(const void *src, size_t size) {
 
 Decl *decl_new(DeclKind kind, const char *name) {
     Decl *decl = arena_alloc(&ast_arena, sizeof(Decl));
+    decl->loc = (Loc){file_name, line_num};
     decl->name = name;
     decl->kind = kind;
     return decl;
@@ -53,24 +54,24 @@ Decl *decl_aggregate(AggregateKind kind, const char *name, AggregateItem *items,
     return decl;
 }
 
-Decl *decl_func(const char *name, FuncArg *args, size_t num_args, Typespec *type,
-                StmtBlock block) {
+Decl *decl_func(const char *name, FuncArg *args, size_t num_args, Typespec *type, StmtBlock block) {
     Decl *decl = decl_new(DECL_FUNC, name);
     decl->func_decl.args = AST_DUP(args);
     decl->func_decl.num_func_args = num_args;
     decl->func_decl.type = type;
     decl->func_decl.block = block;
-	return decl;
+    return decl;
 }
 
 Decl *decl_typedef(const char *name, Typespec *type) {
     Decl *decl = decl_new(DECL_TYPEDEF, name);
     decl->typedef_decl.type = type;
-	return decl;
+    return decl;
 }
 
 Expr *expr_new(ExprKind kind) {
     Expr *expr = arena_alloc(&ast_arena, sizeof(struct Expr));
+    expr->loc = (Loc){file_name, line_num};
     expr->kind = kind;
     return expr;
 }
@@ -186,7 +187,7 @@ Expr *expr_binary(Expr *left, TokenKind op, Expr *right) {
     expr->binary_expr.left = left;
     expr->binary_expr.right = right;
     expr->binary_expr.op = op;
-	return expr;
+    return expr;
 }
 
 Expr *expr_ternary(Expr *eval, Expr *then_expr, Expr *else_expr) {
@@ -200,6 +201,7 @@ Expr *expr_ternary(Expr *eval, Expr *then_expr, Expr *else_expr) {
 Typespec *typespec_new(TypespecKind kind) {
     Typespec *type = arena_alloc(&ast_arena, sizeof(Typespec));
     type->kind = kind;
+    type->loc = (Loc){file_name, line_num};
     return type;
 }
 
@@ -232,6 +234,7 @@ Typespec *typespec_ptr(Typespec *ptr_type) {
 
 Stmt *stmt_new(StmtKind kind) {
     Stmt *stmt = arena_alloc(&ast_arena, sizeof(Stmt));
+    stmt->loc = (Loc){file_name, line_num};
     stmt->kind = kind;
     return stmt;
 }

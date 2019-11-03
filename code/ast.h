@@ -80,6 +80,7 @@ typedef struct StmtInit {
 } StmtInit;
 
 typedef struct Stmt {
+    Loc loc;
     StmtKind kind;
     union {
         StmtBlock block;
@@ -159,6 +160,7 @@ typedef struct ConstDecl {
 } ConstDecl;
 
 typedef struct Decl {
+    Loc loc;
     DeclKind kind;
     const char *name;
     Sym *sym;
@@ -212,6 +214,7 @@ typedef struct CompoundVal {
 } CompoundVal;
 
 typedef struct Expr {
+    Loc loc;
     ExprKind kind;
     union {
         uint64_t int_val;
@@ -291,6 +294,7 @@ typedef struct PtrTypespec {
 } PtrTypespec;
 
 typedef struct Typespec {
+    Loc loc;
     TypespecKind kind;
     union {
         const char *name;

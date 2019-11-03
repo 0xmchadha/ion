@@ -103,7 +103,7 @@ typedef enum TokenKind {
     TOKEN_OR,
     TOKEN_XOR,
     TOKEN_LAST_ADD = TOKEN_XOR,
-    
+
     // token eq precedence
     TOKEN_EQ,
     TOKEN_FIRST_EQ = TOKEN_EQ,
@@ -210,6 +210,8 @@ typedef struct {
 
 token_t token;
 const char *stream;
+size_t line_num;
+const char *file_name;
 
 uint8_t char_digit[] = {
     ['0'] = 0,  ['1'] = 1,  ['2'] = 2,  ['3'] = 3,  ['4'] = 4,  ['5'] = 5,  ['6'] = 6,  ['7'] = 7,
@@ -218,7 +220,7 @@ uint8_t char_digit[] = {
 };
 
 static inline int char_to_digit(char c) {
-		return (c == '0' || char_digit[(uint8_t)c] != 0) ? char_digit[(uint8_t)c] : -1;
+    return (c == '0' || char_digit[(uint8_t) c] != 0) ? char_digit[(uint8_t) c] : -1;
 }
 
 void scan_int() {
@@ -255,7 +257,7 @@ void scan_int() {
         }
 
         if (digit >= base) {
-            syntax_error("digit %c is out of range for the base %d", *stream, basex);
+            syntax_error("digit %c is out of range for the base %d", *stream, base);
             break;
         }
 
@@ -417,6 +419,9 @@ repeat:
     case '\t':
     case '\v':
         while (isspace(*stream)) {
+            if (*stream == '\n') {
+                line_num++;
+            }
             stream++;
         }
         goto repeat;
@@ -655,8 +660,10 @@ bool match_keyword(const char *keyword) {
     return false;
 }
 
-static void init_stream(const char *str) {
-    init_keywords();
+static void init_stream(const char *path, const char *str) {
+    path = (!path) ? "<anonymous>" : path;
+    line_num = 1;
+    file_name = path;
     stream = str;
     next_token();
 }
@@ -698,41 +705,41 @@ bool expect_token(TokenKind kind) {
 static void lex_test() {
     // identifier test
     init_keywords();
-    init_stream("hello123");
+    init_stream(NULL, "hello123");
     assert_token_ident(str_intern("hello123"));
     assert_token_eof();
 
     // integer literal test
-    init_stream("123 0 23");
+    init_stream(NULL,"123 0 23");
     assert_token_int(123);
     assert_token_int(0);
     assert_token_int(23);
     assert_token_eof();
 
-    init_stream("0");
+    init_stream(NULL,"0");
     assert_token_int(0);
 
     /* floating point test */
-    init_stream("0xff 1.2");
+    init_stream(NULL, "0xff 1.2");
     assert(token.mod == TOKENMOD_HEX);
     assert_token_int(255);
     assert_token_float(1.2);
     assert_token_eof();
 
     // char literal test
-    init_stream("'\\n' 'a' ");
+    init_stream(NULL,"'\\n' 'a' ");
     assert_token_int('\n');
     assert_token_int('a');
     assert_token_eof();
 
     // string literal tests
-    init_stream("\"foo\" \"a\\n\"");
+    init_stream(NULL,"\"foo\" \"a\\n\"");
     assert_token_str("foo");
     assert_token_str("a\n");
     assert_token_eof();
 
     // expression test //
-    init_stream("a+b=c+d;");
+    init_stream(NULL,"a+b=c+d;");
     assert_token_ident(str_intern("a"));
     assert(match_token(TOKEN_ADD));
     assert_token_ident(str_intern("b"));
@@ -746,7 +753,7 @@ static void lex_test() {
 
     // operator test //
 
-    init_stream(": := ++ += < << <= <<=");
+    init_stream(NULL,": := ++ += < << <= <<=");
 
     assert(match_token(TOKEN_COLON));
     assert(match_token(TOKEN_COLON_ASSIGN));

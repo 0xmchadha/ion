@@ -426,7 +426,7 @@ void print_decl_test() {
     };
 
     for (size_t i = 0; i < sizeof(decl) / sizeof(*decl); i++) {
-        init_stream(decl[i]);
+        init_stream(NULL, decl[i]);
         Decl *d = parse_decl_opt();
         print_decl(d);
         printf("\n");

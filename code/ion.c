@@ -1,6 +1,6 @@
 
-const char *ion_compile_str(const char *str) {
-    init_stream(str);
+const char *ion_compile_str(const char *path, const char *str) {
+    init_stream(path, str);
 
     create_base_types();
     install_global_decls(parse_file());
@@ -18,7 +18,7 @@ const char *ion_compile_str(const char *str) {
 }
 
 const char *ion_compile_file(const char *path) {
-    const char *result = ion_compile_str(read_file(path));
+    const char *result = ion_compile_str(path, read_file(path));
     const char *c_path = replace_ext(path, "c");
 
     write_file(c_path, result, buf_len(result));

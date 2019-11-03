@@ -155,7 +155,7 @@ Decl *parse_decl_opt() {
 Decl *parse_decl() {
     Decl *decl = parse_decl_opt();
 
-    if (!decl) {
+    if (!decl && !is_token_eof()) {
         syntax_error("Expected declaration keyword, got %s", token_info());
     }
 
@@ -692,7 +692,7 @@ DeclSet *parse_file() {
     Decl **decls = NULL;
     Decl *d;
 
-    while (d = parse_decl_opt()) {
+    while (d = parse_decl()) {
         buf_push(decls, d);
     }
     
