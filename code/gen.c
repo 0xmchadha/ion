@@ -16,6 +16,10 @@ const char *type_to_cdecl(Type *t, const char *gen) {
         return strf("void %s", gen);
     case TYPE_INT:
         return strf("int %s", gen);
+    case TYPE_CHAR:
+        return strf("char %s", gen);
+    case TYPE_FLOAT:
+        return strf("float %s", gen);
     case TYPE_PTR:
         return type_to_cdecl(t->ptr.elem, ((gen == "") ? strf("*") : strf("*(%s)", gen)));
     case TYPE_ARRAY:
