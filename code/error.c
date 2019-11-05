@@ -1,7 +1,7 @@
-typedef struct Loc {
+typedef struct SrcPos {
     const char *file;
     size_t line_num;
-} Loc;
+}SrcPos;
 
 extern size_t line_num;
 extern const char *file_name;

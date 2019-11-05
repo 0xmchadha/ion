@@ -20,7 +20,7 @@ void *ast_dup(const void *src, size_t size) {
 
 Decl *decl_new(DeclKind kind, const char *name) {
     Decl *decl = arena_alloc(&ast_arena, sizeof(Decl));
-    decl->loc = (Loc){file_name, line_num};
+    decl->pos = (SrcPos){file_name, line_num};
     decl->name = name;
     decl->kind = kind;
     return decl;
@@ -71,7 +71,7 @@ Decl *decl_typedef(const char *name, Typespec *type) {
 
 Expr *expr_new(ExprKind kind) {
     Expr *expr = arena_alloc(&ast_arena, sizeof(struct Expr));
-    expr->loc = (Loc){file_name, line_num};
+    expr->pos = (SrcPos){file_name, line_num};
     expr->kind = kind;
     return expr;
 }
@@ -201,7 +201,7 @@ Expr *expr_ternary(Expr *eval, Expr *then_expr, Expr *else_expr) {
 Typespec *typespec_new(TypespecKind kind) {
     Typespec *type = arena_alloc(&ast_arena, sizeof(Typespec));
     type->kind = kind;
-    type->loc = (Loc){file_name, line_num};
+    type->pos = (SrcPos){file_name, line_num};
     return type;
 }
 
@@ -234,7 +234,7 @@ Typespec *typespec_ptr(Typespec *ptr_type) {
 
 Stmt *stmt_new(StmtKind kind) {
     Stmt *stmt = arena_alloc(&ast_arena, sizeof(Stmt));
-    stmt->loc = (Loc){file_name, line_num};
+    stmt->pos = (SrcPos){file_name, line_num};
     stmt->kind = kind;
     return stmt;
 }

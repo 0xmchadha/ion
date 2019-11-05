@@ -3,10 +3,12 @@ const char *ion_compile_str(const char *path, const char *str) {
     init_stream(path, str);
 
     create_base_types();
+    export_c_func();
     install_global_decls(parse_file());
 
     resolve_symbols();
 
+    gen_preamble();
     forward_declare_types();
     generate_types();
     forward_declare_functions();

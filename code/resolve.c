@@ -113,6 +113,7 @@ typedef struct ResolvedExpr {
 ResolvedExpr resolve_expr(Expr *expr);
 ResolvedExpr resolve_expected_expr(Expr *expr, Type *expected_type);
 Type *type_func(Type **args, size_t num_args, Type *ret_type);
+Type *type_ptr(Type *elem);
 Sym *sym_get(const char *name);
 void resolve_stmt(Stmt *stmt, Type *expected_type, Sym *scope_start);
 
@@ -122,6 +123,13 @@ void insert_global_syms(Sym sym) {
 
     map_put(&global_sym_map, sym.name, sym_alloc);
     buf_push(global_sym_list, sym_alloc);
+}
+
+void export_c_func() {
+    insert_global_syms((Sym){.name = str_intern("puts"),
+                             .state = SYM_RESOLVED,
+                             .kind = SYM_FUNC,
+                             .type = type_func(&(Type *){type_ptr(type_char)}, 1, type_int)});
 }
 
 void create_base_types() {
@@ -200,7 +208,7 @@ typedef struct CachedPtrTypes {
     Type *ptr;
 } CachedPtrTypes;
 
-//CachedPtrTypes *cached_ptr_types;
+// CachedPtrTypes *cached_ptr_types;
 Map cached_ptr_types;
 
 Type *type_alloc(TypeKind kind) {
@@ -212,11 +220,11 @@ Type *type_alloc(TypeKind kind) {
 Type *type_ptr(Type *elem) {
     Type *ptr;
 
-    if ((ptr = (Type *)map_get(&cached_ptr_types, elem))) {
+    if ((ptr = (Type *) map_get(&cached_ptr_types, elem))) {
         return ptr;
     }
 
-     ptr = type_alloc(TYPE_PTR);
+    ptr = type_alloc(TYPE_PTR);
     ptr->ptr.elem = elem;
     ptr->size = PTR_SIZE;
     ptr->alignment = PTR_ALIGNMENT;
@@ -405,6 +413,13 @@ Type *ptr_decay(Type *type) {
     }
 
     return type;
+}
+
+ResolvedExpr const_char_expr() {
+    return (ResolvedExpr){
+        .type = type_ptr(type_char),
+        .is_const = true,
+    };
 }
 
 ResolvedExpr const_int_expr(int64_t val) {
@@ -827,6 +842,8 @@ ResolvedExpr resolve_expected_expr(Expr *expr, Type *expected_type) {
         return resolve_sizeof_type(expr);
     case EXPR_SIZEOF_EXPR:
         return resolve_sizeof_expr(expr);
+    case EXPR_STR:
+        return const_char_expr();
     default:
         assert(0);
         return (ResolvedExpr){};
@@ -1104,6 +1121,9 @@ void resolve_stmt(Stmt *stmt, Type *expected_type, Sym *scope_start) {
         sym_push_var(stmt->stmt_init.name, rvalue_expr.type, scope_start);
         break;
     }
+    case STMT_EXPR:
+        resolve_expr(stmt->expr);
+        break;
     default:
         assert(0);
         break;

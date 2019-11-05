@@ -279,10 +279,12 @@ void gen_stmt(Stmt *stmt) {
     switch (stmt->kind) {
     case STMT_NONE:
         assert(0);
-
     case STMT_DECL:
+        assert(0);
         break;
-
+    case STMT_EXPR:
+        genf("%s\n", gen_expr(stmt->expr));
+        break;
     case STMT_INIT: {
         ResolvedExpr expr = resolve_expr(stmt->stmt_init.expr);
         genf("%s = %s;\n", type_to_cdecl(expr.type, stmt->stmt_init.name),
@@ -409,6 +411,12 @@ void resolve_symbols() {
     }
 }
 
+void gen_preamble() {
+    const char *preamble = "// preamble\n \
+#include <stdio.h>\n";
+    genf("%s", preamble);
+}
+
 void forward_declare_types() {
     genf("// Forward declared all types //\n\n");
     // Forward declare all types
@@ -458,6 +466,7 @@ void gen_c_code(const char *code) {
 
     resolve_symbols();
 
+    gen_preamble();
     forward_declare_types();
     generate_types();
     forward_declare_functions();
