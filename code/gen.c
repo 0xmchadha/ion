@@ -1,8 +1,14 @@
 char *gen_buf = NULL;
 size_t indent_newline;
+size_t ion_line_tracker = 1;
 
 #define genf(...)                                                                                  \
     (buf_printf(gen_buf, "%.*s", 4 * indent_newline, "                                  ")),       \
+        (buf_printf(gen_buf, __VA_ARGS__))
+
+#define genln(...)                                                                                 \
+    ((ion_line_tracker++) &&                                                                       \
+     (buf_printf(gen_buf, "\n%.*s", 4 * indent_newline, "                                  "))),   \
         (buf_printf(gen_buf, __VA_ARGS__))
 
 const char *type_to_cdecl(Type *t, const char *gen);
@@ -101,18 +107,19 @@ void gen_decl(Decl *decl) {
         return;
     }
 
+    genln("#line %d \"%s\"", decl->pos.line_num, decl->pos.file);
     switch (decl->kind) {
     case DECL_ENUM: {
-        genf("enum %s {\n", name);
+        genln("enum %s {", name);
         indent_newline++;
         for (int i = 0; i < decl->enum_decl.num_enum_items; i++) {
-            genf("%s");
+            genln("%s");
             if (decl->enum_decl.items[i].expr) {
-                genf(" = %s,\n", gen_expr(decl->enum_decl.items[i].expr));
+                genf(" = %s,", gen_expr(decl->enum_decl.items[i].expr));
             }
         }
         indent_newline--;
-        genf("}\n\n");
+        genln("};");
         break;
     }
     case DECL_TYPEDEF:
@@ -123,36 +130,36 @@ void gen_decl(Decl *decl) {
         }
 
         if (decl->var_decl.type) {
-            genf("%s", typespec_to_cdecl(decl->var_decl.type, name));
+            genln("%s", typespec_to_cdecl(decl->var_decl.type, name));
         } else {
-            genf("%s", type_to_cdecl(type, name));
+            genln("%s", type_to_cdecl(type, name));
         }
 
         if (decl->var_decl.expr) {
-            genf(" = %s;\n", gen_expr(decl->var_decl.expr));
+            genf(" = %s;", gen_expr(decl->var_decl.expr));
         } else {
-            genf(";\n");
+            genf(";");
         }
 
         break;
     }
     case DECL_CONST:
-        genf("enum {%s = %s};\n", name, gen_expr(decl->const_decl.expr));
+        genln("enum {%s = %s};", name, gen_expr(decl->const_decl.expr));
         break;
 
     case DECL_AGGREGATE: {
         const char *aggregate =
             (decl->aggregate_decl.kind == AGGREGATE_STRUCT) ? "struct" : "union";
-        genf("%s %s {\n", aggregate, decl->name);
+        genln("%s %s {", aggregate, decl->name);
         indent_newline++;
         for (int i = 0; i < decl->aggregate_decl.num_items; i++) {
             for (int j = 0; j < decl->aggregate_decl.items[i].num_items; j++) {
-                genf("%s;\n", typespec_to_cdecl(decl->aggregate_decl.items[i].type,
-                                                decl->aggregate_decl.items[i].names[j]));
+                genln("%s;", typespec_to_cdecl(decl->aggregate_decl.items[i].type,
+                                               decl->aggregate_decl.items[i].names[j]));
             }
         }
         indent_newline--;
-        genf("};\n\n");
+        genln("};");
         break;
     }
 
@@ -169,9 +176,8 @@ void gen_decl(Decl *decl) {
                 strf("%s, %s", args,
                      typespec_to_cdecl(decl->func_decl.args[i].type, decl->func_decl.args[i].name));
         }
-        genf("%s", typespec_to_cdecl(decl->func_decl.type, strf("%s(%s)", decl->name, args)));
+        genln("%s", typespec_to_cdecl(decl->func_decl.type, strf("%s(%s)", decl->name, args)));
         gen_stmtblock(decl->func_decl.block);
-        genf("\n");
         break;
     }
 
@@ -193,6 +199,24 @@ const char *gen_compound_val(CompoundVal *val) {
     }
 }
 
+const char *gen_escaped_str(const char *str) {
+    char *escaped_str = NULL;
+
+    while (*str != '\0') {
+        if (char_to_escape[*str]) {
+            buf_push(escaped_str, '\\');
+            buf_push(escaped_str, char_to_escape[*str]);
+        } else {
+            buf_push(escaped_str, *str);
+        }
+
+        str++;
+    }
+
+    buf_push(escaped_str, '\0');
+    return strf("\"%s\"", escaped_str);
+}
+
 const char *gen_expr(Expr *expr) {
 
     if (!expr) {
@@ -211,7 +235,7 @@ const char *gen_expr(Expr *expr) {
     case EXPR_NAME:
         return strf("%s", expr->name);
     case EXPR_STR:
-        return strf("\"%s\"", expr->str_val);
+        return gen_escaped_str(expr->str_val);
     case EXPR_FIELD:
         return strf("(%s).%s", gen_expr(expr->field_expr.expr), expr->field_expr.name);
     case EXPR_INDEX:
@@ -266,16 +290,26 @@ const char *gen_expr(Expr *expr) {
 }
 
 void gen_stmtblock(StmtBlock block) {
-    genf("{\n");
+    genln("{");
     indent_newline++;
     for (int i = 0; i < block.num_stmts; i++) {
         gen_stmt(block.stmts[i]);
     }
     indent_newline--;
-    genf("}\n");
+    genln("}");
+}
+
+void gen_line_directive(Stmt *stmt) {
+    if (stmt->pos.line_num != ion_line_tracker) {
+        genln("#line %d \"%s\"", stmt->pos.line_num, stmt->pos.file);
+        ion_line_tracker = stmt->pos.line_num;
+    }
 }
 
 void gen_stmt(Stmt *stmt) {
+
+    gen_line_directive(stmt);
+
     switch (stmt->kind) {
     case STMT_NONE:
         assert(0);
@@ -283,56 +317,56 @@ void gen_stmt(Stmt *stmt) {
         assert(0);
         break;
     case STMT_EXPR:
-        genf("%s\n", gen_expr(stmt->expr));
+        genln("%s;", gen_expr(stmt->expr));
         break;
     case STMT_INIT: {
         ResolvedExpr expr = resolve_expr(stmt->stmt_init.expr);
-        genf("%s = %s;\n", type_to_cdecl(expr.type, stmt->stmt_init.name),
-             gen_expr(stmt->stmt_init.expr));
+        genln("%s = %s;", type_to_cdecl(expr.type, stmt->stmt_init.name),
+              gen_expr(stmt->stmt_init.expr));
         break;
     }
     case STMT_ASSIGN:
-        genf("%s %s %s;\n", gen_expr(stmt->stmt_assign.left_expr),
-             token_kind_name(stmt->stmt_assign.op), gen_expr(stmt->stmt_assign.right_expr));
+        genln("%s %s %s;", gen_expr(stmt->stmt_assign.left_expr),
+              token_kind_name(stmt->stmt_assign.op), gen_expr(stmt->stmt_assign.right_expr));
         break;
     case STMT_RETURN:
         if (stmt->stmt_return.expr) {
-            genf("return %s;\n", gen_expr(stmt->stmt_return.expr));
+            genln("return %s;", gen_expr(stmt->stmt_return.expr));
         } else {
-            genf("return;\n");
+            genln("return;");
         }
         break;
     case STMT_BREAK:
-        genf("break;\n");
+        genln("break;");
         break;
     case STMT_CONTINUE:
-        genf("continue;\n");
+        genln("continue;");
         break;
     case STMT_BLOCK: {
         gen_stmtblock(stmt->block);
         break;
     }
     case STMT_IF: {
-        genf("if (%s)\n", gen_expr(stmt->stmt_if.expr));
+        genln("if (%s)", gen_expr(stmt->stmt_if.expr));
         gen_stmtblock(stmt->stmt_if.if_block);
         for (int i = 0; i < stmt->stmt_if.num_elseifs; i++) {
-            genf("else if(%s)\n", gen_expr(stmt->stmt_if.else_ifs[i].expr));
+            genln("else if(%s)", gen_expr(stmt->stmt_if.else_ifs[i].expr));
             gen_stmtblock(stmt->stmt_if.else_ifs[i].block);
         }
 
         if (stmt->stmt_if.else_block.num_stmts) {
-            genf("else \n");
+            genln("else");
             gen_stmtblock(stmt->stmt_if.else_block);
         }
         break;
     }
     case STMT_DO_WHILE:
-        genf("do \n");
+        genln("do");
         gen_stmtblock(stmt->stmt_while.block);
-        genf("while (%s);\n", gen_expr(stmt->stmt_while.expr));
+        genf(" while (%s);", gen_expr(stmt->stmt_while.expr));
         break;
     case STMT_WHILE:
-        genf("while (%s)", gen_expr(stmt->stmt_while.expr));
+        genln("while (%s)", gen_expr(stmt->stmt_while.expr));
         gen_stmtblock(stmt->stmt_while.block);
         break;
     case STMT_FOR: {
@@ -364,25 +398,25 @@ void gen_stmt(Stmt *stmt) {
                      token_kind_name(next->stmt_assign.op), gen_expr(next->stmt_assign.right_expr));
         }
         str = strf("%s)", str);
-        genf("%s\n", str);
+        genln("%s", str);
         gen_stmtblock(stmt->stmt_for.block);
         break;
     }
     case STMT_SWITCH: {
-        genf("switch (%s) {\n", gen_expr(stmt->stmt_switch.expr));
+        genln("switch (%s) {", gen_expr(stmt->stmt_switch.expr));
         indent_newline++;
         for (int i = 0; i < stmt->stmt_switch.num_cases; i++) {
             for (int j = 0; j < stmt->stmt_switch.cases[i].num_exprs; j++) {
-                genf("case %s: \n", gen_expr(stmt->stmt_switch.cases[i].expr[j]));
+                genln("case %s:", gen_expr(stmt->stmt_switch.cases[i].expr[j]));
             }
             if (stmt->stmt_switch.cases[i].is_default) {
-                genf("default:\n");
+                genln("default:");
             }
-
             gen_stmtblock(stmt->stmt_switch.cases[i].block);
+            genln("break;");
         }
         indent_newline--;
-        genf("}\n");
+        genln("}");
         break;
     }
     default:
@@ -423,9 +457,9 @@ void forward_declare_types() {
     for (Decl **decl = ordered_decls; decl != buf_end(ordered_decls); decl++) {
         if ((*decl)->kind == DECL_AGGREGATE) {
             if ((*decl)->aggregate_decl.kind == AGGREGATE_STRUCT) {
-                genf("typedef struct %s %s;\n", (*decl)->name, (*decl)->name);
+                genln("typedef struct %s %s;", (*decl)->name, (*decl)->name);
             } else {
-                genf("typedef union %s %s;\n", (*decl)->name, (*decl)->name);
+                genln("typedef union %s %s;", (*decl)->name, (*decl)->name);
             }
         }
     }
@@ -436,7 +470,7 @@ void forward_declare_functions() {
 
     for (Decl **decl = ordered_decls; decl != buf_end(ordered_decls); decl++) {
         if ((*decl)->kind == DECL_FUNC) {
-            genf("%s;\n", type_to_cdecl((*decl)->sym->type, (*decl)->name));
+            genln("%s;", type_to_cdecl((*decl)->sym->type, (*decl)->name));
         }
     }
 }

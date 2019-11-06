@@ -273,7 +273,7 @@ Type *type_func(Type **args, size_t num_args, Type *ret_type) {
     }
 
     Type *type = type_alloc(TYPE_FUNC);
-    type->func.args = args;
+    type->func.args = AST_DUP(args);
     type->func.num_args = num_args;
     type->func.ret_type = ret_type;
 
@@ -415,7 +415,7 @@ Type *ptr_decay(Type *type) {
     return type;
 }
 
-ResolvedExpr const_char_expr() {
+ResolvedExpr const_charptr_expr() {
     return (ResolvedExpr){
         .type = type_ptr(type_char),
         .is_const = true,
@@ -843,7 +843,7 @@ ResolvedExpr resolve_expected_expr(Expr *expr, Type *expected_type) {
     case EXPR_SIZEOF_EXPR:
         return resolve_sizeof_expr(expr);
     case EXPR_STR:
-        return const_char_expr();
+        return const_charptr_expr();
     default:
         assert(0);
         return (ResolvedExpr){};

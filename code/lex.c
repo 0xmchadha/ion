@@ -198,6 +198,7 @@ const char *token_to_str[] = {
 typedef struct {
     TokenKind kind;
     TokenMod mod;
+    SrcPos pos;
     const char *start;
     const char *end;
     union {
@@ -334,6 +335,11 @@ char escape_to_char[] = {
     ['b'] = '\b', ['a'] = '\a', ['0'] = '\0',
 };
 
+char char_to_escape[] = {
+    ['\r'] = 'r', ['\n'] = 'n', ['\t'] = 't', ['\v'] = 'v',
+    ['\b'] = 'b', ['\a'] = 'a', ['\0'] = '0', ['"'] = '"',
+};
+
 void scan_char() {
     char val;
     assert(*stream == '\'');
@@ -411,7 +417,8 @@ repeat:
 
     token.start = stream;
     token.mod = TOKENMOD_NONE;
-
+    token.pos = (SrcPos){file_name, line_num};
+    
     switch (*stream) {
     case ' ':
     case '\n':
@@ -710,13 +717,13 @@ static void lex_test() {
     assert_token_eof();
 
     // integer literal test
-    init_stream(NULL,"123 0 23");
+    init_stream(NULL, "123 0 23");
     assert_token_int(123);
     assert_token_int(0);
     assert_token_int(23);
     assert_token_eof();
 
-    init_stream(NULL,"0");
+    init_stream(NULL, "0");
     assert_token_int(0);
 
     /* floating point test */
@@ -727,19 +734,19 @@ static void lex_test() {
     assert_token_eof();
 
     // char literal test
-    init_stream(NULL,"'\\n' 'a' ");
+    init_stream(NULL, "'\\n' 'a' ");
     assert_token_int('\n');
     assert_token_int('a');
     assert_token_eof();
 
     // string literal tests
-    init_stream(NULL,"\"foo\" \"a\\n\"");
+    init_stream(NULL, "\"foo\" \"a\\n\"");
     assert_token_str("foo");
     assert_token_str("a\n");
     assert_token_eof();
 
     // expression test //
-    init_stream(NULL,"a+b=c+d;");
+    init_stream(NULL, "a+b=c+d;");
     assert_token_ident(str_intern("a"));
     assert(match_token(TOKEN_ADD));
     assert_token_ident(str_intern("b"));
@@ -753,7 +760,7 @@ static void lex_test() {
 
     // operator test //
 
-    init_stream(NULL,": := ++ += < << <= <<=");
+    init_stream(NULL, ": := ++ += < << <= <<=");
 
     assert(match_token(TOKEN_COLON));
     assert(match_token(TOKEN_COLON_ASSIGN));

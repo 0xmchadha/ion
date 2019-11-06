@@ -329,7 +329,6 @@ const char *str_intern_range(const char *start, const char *end) {
     strp = arena_alloc(&str_arena, len + 1);
     strncpy(strp, start, len);
     strp[len] = '\0';
-
     map_put(&str_intern_map, (void*)hash, strp);
     buf_push(interns, ((struct internStr){len, strp}));
 

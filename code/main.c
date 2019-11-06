@@ -31,12 +31,14 @@
 #include "ion.c"
 
 int main(int argc, char **argv) {
-    //common_test(); 
+    ///common_test();
     //lex_test(); 
     /* print_decl_test(); */
-     resolve_test(); 
-    //gen_test();
-    //common_test();
     /* init_keywords(); */
-    /* ion_main(argc, argv); */
+    /* resolve_test();  */
+    /* //gen_test(); */
+
+    //common_test();
+    init_keywords();
+    ion_main(argc, argv);
 }
