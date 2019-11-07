@@ -123,7 +123,8 @@ void gen_decl(Decl *decl) {
         break;
     }
     case DECL_TYPEDEF:
-        assert(0);
+        genln("typedef %s;", typespec_to_cdecl(decl->typedef_decl.type, name));
+        break;
     case DECL_VAR: {
         if (type->kind == TYPE_FUNC) {
             name = strf("*%s", name);
@@ -446,7 +447,7 @@ void resolve_symbols() {
 }
 
 void gen_preamble() {
-    const char *preamble = "// preamble\n \
+    const char *preamble = "// preamble\n\
 #include <stdio.h>\n";
     genf("%s", preamble);
 }
@@ -465,21 +466,13 @@ void forward_declare_types() {
     }
 }
 
-void forward_declare_functions() {
-    genf("\n\n// Forward declare all functions // \n\n");
-
-    for (Decl **decl = ordered_decls; decl != buf_end(ordered_decls); decl++) {
-        if ((*decl)->kind == DECL_FUNC) {
-            genln("%s;", type_to_cdecl((*decl)->sym->type, (*decl)->name));
-        }
-    }
-}
-
 void generate_types() {
     // generate decls other than funcs in resolved order
     for (Decl **decl = ordered_decls; decl != buf_end(ordered_decls); decl++) {
         if ((*decl)->kind != DECL_FUNC) {
             gen_decl(*decl);
+        } else if ((*decl)->kind == DECL_FUNC) {
+            genln("%s;", type_to_cdecl((*decl)->sym->type, (*decl)->name));
         }
     }
 }
@@ -503,7 +496,7 @@ void gen_c_code(const char *code) {
     gen_preamble();
     forward_declare_types();
     generate_types();
-    forward_declare_functions();
+    //    forward_declare_functions();
     generate_functions();
 
     printf("%s", gen_buf);

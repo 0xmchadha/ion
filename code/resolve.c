@@ -19,6 +19,7 @@ typedef enum SymKind {
     SYM_FUNC,
     SYM_TYPE,
     SYM_ENUM_MEM,
+    SYM_TYPEDEF,
 } SymKind;
 
 typedef struct Sym {
@@ -67,6 +68,7 @@ typedef struct Type {
     TypeState state;
     size_t size;
     size_t alignment;
+
     union {
         const char *name;
         struct {
@@ -196,10 +198,11 @@ void install_global_decl(Decl *decl) {
         }
         break;
     }
-    case DECL_TYPEDEF:
+    case DECL_TYPEDEF: {
         insert_global_syms(
-            (Sym){.name = decl->name, .kind = SYM_TYPE, .decl = decl, .state = SYM_UNRESOLVED});
+            (Sym){.name = decl->name, .kind = SYM_TYPEDEF, .decl = decl, .state = SYM_UNRESOLVED});
         break;
+    }
     }
 }
 
@@ -289,15 +292,18 @@ Type *create_type(Typespec *type) {
     }
 
     switch (type->kind) {
-
     case TYPESPEC_NAME: {
         Sym *sym = sym_get(type->name);
         if (!sym) {
             fatal("Type %s is not defined", type->name);
         }
-        if (sym->kind != SYM_TYPE) {
+
+        if (sym->kind == SYM_TYPEDEF) {
+            sym->type = create_type(sym->decl->typedef_decl.type);
+        } else if (sym->kind != SYM_TYPE) {
             fatal("Symbol %s is not a type", type->name);
         }
+
         return sym->type;
     }
 
@@ -918,7 +924,9 @@ void resolve_global_sym(Sym *sym) {
     case DECL_FUNC: {
         Type **func_args = NULL;
         for (int i = 0; i < decl->func_decl.num_func_args; i++) {
-            buf_push(func_args, create_type(decl->func_decl.args[i].type));
+            Type *type = create_type(decl->func_decl.args[i].type);
+            complete_type(type);
+            buf_push(func_args, type);
         }
         Type *ret_type = create_type(decl->func_decl.type);
         sym->type = type_func(func_args, buf_len(func_args), ret_type);

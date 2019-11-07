@@ -11,7 +11,6 @@ const char *ion_compile_str(const char *path, const char *str) {
     gen_preamble();
     forward_declare_types();
     generate_types();
-    forward_declare_functions();
     generate_functions();
 
     const char *result = gen_buf;
