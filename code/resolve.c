@@ -311,9 +311,12 @@ Type *create_type(Typespec *type) {
         return type_ptr(create_type(type->ptr.type));
 
     case TYPESPEC_ARRAY: {
-        ResolvedExpr array_size = resolve_expr(type->array.expr);
-        if (!array_size.is_const) {
-            fatal("Array size is expected to be a const");
+        ResolvedExpr array_size = {};
+        if (type->array.expr) {
+            array_size = resolve_expr(type->array.expr);
+            if (!array_size.is_const) {
+                fatal("Array size is expected to be a const");
+            }
         }
 
         Type *elem = create_type(type->array.type);
@@ -731,14 +734,15 @@ ResolvedExpr resolve_compound_expr(Expr *expr, Type *expected_type) {
             }
         }
 
-        if (expected_type->array.size < expr->compound_expr.num_args) {
+        if (expected_type->array.size && expected_type->array.size < expr->compound_expr.num_args) {
             fatal("compound literal has more array members than the defined type: expected: %d "
                   "actual :%d",
                   expected_type->array.size, expr->compound_expr.num_args);
         }
 
+        size_t max_index = 0;
         for (size_t i = 0, array_index = 0; i < expr->compound_expr.num_args; i++, array_index++) {
-            if (array_index >= expected_type->array.size) {
+            if (expected_type->array.size && array_index >= expected_type->array.size) {
                 fatal("compound literal initializing array out of bounds");
             }
 
@@ -757,7 +761,7 @@ ResolvedExpr resolve_compound_expr(Expr *expr, Type *expected_type) {
                 }
 
                 array_index = (size_t) expr_index.val;
-                if (array_index >= expected_type->array.size) {
+                if (expected_type->array.size && array_index >= expected_type->array.size) {
                     fatal("compound literal initializing array out of bounds");
                 }
 
@@ -779,7 +783,10 @@ ResolvedExpr resolve_compound_expr(Expr *expr, Type *expected_type) {
                       "field");
                 return rvalue_expr(type_void);
             }
+            max_index = MAX(max_index, array_index);
         }
+
+        *expected_type = *type_array(expected_type->array.elem, max_index + 1);
     }
 
     return rvalue_expr(expected_type);
