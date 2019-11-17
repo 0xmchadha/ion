@@ -7,9 +7,11 @@ size_t ion_line_tracker = 1;
         (buf_printf(gen_buf, __VA_ARGS__))
 
 #define genln(...)                                                                                 \
-    ((ion_line_tracker++) &&                                                                       \
-     (buf_printf(gen_buf, "\n%.*s", 4 * indent_newline, "                                  "))),   \
-        (buf_printf(gen_buf, __VA_ARGS__))
+    do {                                                                                           \
+        ion_line_tracker++;                                                                        \
+        (buf_printf(gen_buf, "\n%.*s", 4 * indent_newline, "                                  ")), \
+            (buf_printf(gen_buf, __VA_ARGS__));                                                    \
+    } while (0)
 
 const char *type_to_cdecl(Type *t, const char *gen);
 const char *gen_expr(Expr *expr);
@@ -200,7 +202,7 @@ const char *gen_compound_val(CompoundVal *val) {
     }
 }
 
-const char *gen_escaped_str(const char *str) {
+const char *gen_escaped_str(const unsigned char *str) {
     char *escaped_str = NULL;
 
     while (*str != '\0') {

@@ -40,8 +40,18 @@ typedef enum TypeKind {
     TYPE_NONE,
     TYPE_VOID,
     TYPE_CHAR,
+    TYPE_SCHAR,
+    TYPE_UCHAR,
+    TYPE_SHORT,
+    TYPE_USHORT,
     TYPE_INT,
+    TYPE_UINT,
+    TYPE_LONG,
+    TYPE_ULONG,
+    TYPE_LONGLONG,
+    TYPE_ULONGLONG,
     TYPE_FLOAT,
+    TYPE_DOUBLE,
     TYPE_PTR,
     TYPE_ARRAY,
     TYPE_STRUCT,
@@ -92,9 +102,19 @@ typedef struct Type {
 } Type;
 
 Type *type_void = &(Type){.kind = TYPE_VOID, .size = 0, .alignment = 0};
-Type *type_int = &(Type){.kind = TYPE_INT, .size = 4, .alignment = 4};
 Type *type_char = &(Type){.kind = TYPE_CHAR, .size = 1, .alignment = 1};
+Type *type_schar = &(Type){.kind = TYPE_SCHAR, .size = 1, .alignment = 1};
+Type *type_uchar = &(Type){.kind = TYPE_UCHAR, .size = 1, .alignment = 1};
+Type *type_short = &(Type){.kind = TYPE_SHORT, .size = 2, .alignment = 2};
+Type *type_ushort = &(Type){.kind = TYPE_USHORT, .size = 2, .alignment = 2};
+Type *type_int = &(Type){.kind = TYPE_INT, .size = 4, .alignment = 4};
+Type *type_uint = &(Type){.kind = TYPE_UINT, .size = 4, .alignment = 4};
+Type *type_long = &(Type){.kind = TYPE_LONG, .size = 8, .alignment = 8};
+Type *type_ulong = &(Type){.kind = TYPE_ULONG, .size = 8, .alignment = 8};
+Type *type_longlong = &(Type){.kind = TYPE_LONGLONG, .size = 8, .alignment = 8};
+Type *type_ulonglong = &(Type){.kind = TYPE_ULONGLONG, .size = 8, .alignment = 8};
 Type *type_float = &(Type){.kind = TYPE_FLOAT, .size = 4, .alignment = 4};
+Type *type_double = &(Type){.kind = TYPE_DOUBLE, .size = 8, .alignment = 8};
 
 const size_t PTR_SIZE = 8;
 const size_t PTR_ALIGNMENT = 8;
@@ -135,17 +155,48 @@ void export_c_func() {
 }
 
 void create_base_types() {
-    insert_global_syms((Sym){
-        .name = str_intern("void"), .state = SYM_RESOLVED, .kind = SYM_TYPE, .type = type_void});
 
     insert_global_syms((Sym){
-        .name = str_intern("int"), .state = SYM_RESOLVED, .kind = SYM_TYPE, .type = type_int});
+        .name = str_intern("void"), .state = SYM_RESOLVED, .kind = SYM_TYPE, .type = type_void});
 
     insert_global_syms((Sym){
         .name = str_intern("char"), .state = SYM_RESOLVED, .kind = SYM_TYPE, .type = type_char});
 
     insert_global_syms((Sym){
+        .name = str_intern("signed char"), .state = SYM_RESOLVED, .kind = SYM_TYPE, .type = type_schar});
+
+    insert_global_syms((Sym){
+        .name = str_intern("unsigned char"), .state = SYM_RESOLVED, .kind = SYM_TYPE, .type = type_uchar});
+
+    insert_global_syms((Sym){
+        .name = str_intern("short"), .state = SYM_RESOLVED, .kind = SYM_TYPE, .type = type_short});
+
+    insert_global_syms((Sym){
+        .name = str_intern("unsigned short"), .state = SYM_RESOLVED, .kind = SYM_TYPE, .type = type_ushort});
+
+    insert_global_syms((Sym){
+        .name = str_intern("int"), .state = SYM_RESOLVED, .kind = SYM_TYPE, .type = type_int});
+
+    insert_global_syms((Sym){
+        .name = str_intern("unsigned int"), .state = SYM_RESOLVED, .kind = SYM_TYPE, .type = type_uint});
+
+    insert_global_syms((Sym){
+        .name = str_intern("long"), .state = SYM_RESOLVED, .kind = SYM_TYPE, .type = type_long});
+
+    insert_global_syms((Sym){
+        .name = str_intern("unsigned long"), .state = SYM_RESOLVED, .kind = SYM_TYPE, .type = type_ulong});
+
+    insert_global_syms((Sym){
+        .name = str_intern("long long"), .state = SYM_RESOLVED, .kind = SYM_TYPE, .type = type_longlong});
+
+    insert_global_syms((Sym){
+        .name = str_intern("unsigned long long"), .state = SYM_RESOLVED, .kind = SYM_TYPE, .type = type_ulonglong});
+
+    insert_global_syms((Sym){
         .name = str_intern("float"), .state = SYM_RESOLVED, .kind = SYM_TYPE, .type = type_float});
+
+    insert_global_syms((Sym){
+        .name = str_intern("float"), .state = SYM_RESOLVED, .kind = SYM_TYPE, .type = type_double});
 }
 
 void install_global_decl(Decl *decl) {

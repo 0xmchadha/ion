@@ -314,7 +314,6 @@ uint64_t hash_str(const char *start, const char *end) {
 
 const char *str_intern_range(const char *start, const char *end) {
     size_t len = end - start;
-    size_t i;
 
     uint64_t hash = hash_str(start, end);
     hash = (!hash) ? 1 : hash;
