@@ -217,7 +217,7 @@ typedef struct Expr {
     SrcPos pos;
     ExprKind kind;
     union {
-        uint64_t int_val;
+        int int_val;
         double float_val;
         const char *str_val;
         const char *name;

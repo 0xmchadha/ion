@@ -22,6 +22,22 @@ typedef enum SymKind {
     SYM_TYPEDEF,
 } SymKind;
 
+typedef union Val {
+    char ch;
+    signed char sch;
+    unsigned char uch;
+    short s;
+    unsigned short us;
+    int i;
+    unsigned int ui;
+    long l;
+    unsigned long ul;
+    long long ll;
+    unsigned long long ull;
+    float f;
+    double d;
+} Val;
+
 typedef struct Sym {
     const char *name;
     SymKind kind;
@@ -31,9 +47,7 @@ typedef struct Sym {
     // used for enum members
     const char *enum_decl;
     // used for constants, ie const int and enums
-    union {
-        int64_t val;
-    };
+    Val val;
 } Sym;
 
 typedef enum TypeKind {
@@ -58,6 +72,7 @@ typedef enum TypeKind {
     TYPE_UNION,
     TYPE_ENUM,
     TYPE_FUNC,
+    TYPE_MAX,
 } TypeKind;
 
 Type *type_alloc(TypeKind);
@@ -116,8 +131,19 @@ Type *type_ulonglong = &(Type){.kind = TYPE_ULONGLONG, .size = 8, .alignment = 8
 Type *type_float = &(Type){.kind = TYPE_FLOAT, .size = 4, .alignment = 4};
 Type *type_double = &(Type){.kind = TYPE_DOUBLE, .size = 8, .alignment = 8};
 
+#define type_size_t type_ulonglong
+#define TYPE_SIZE_T TYPE_ULONGLONG
+
 const size_t PTR_SIZE = 8;
 const size_t PTR_ALIGNMENT = 8;
+
+bool is_integer_type(Type *type) {
+    return (type->kind >= TYPE_CHAR && type->kind <= TYPE_ULONGLONG) ? true : false;
+}
+
+bool is_arithmetic_type(Type *type) {
+    return (type->kind >= TYPE_CHAR && type->kind <= TYPE_DOUBLE) ? true : false;
+}
 
 Decl **ordered_decls;
 Map global_sym_map;
@@ -127,9 +153,7 @@ typedef struct ResolvedExpr {
     Type *type;
     bool is_lvalue;
     bool is_const;
-    union {
-        int64_t val;
-    };
+    Val val;
 } ResolvedExpr;
 
 ResolvedExpr resolve_expr(Expr *expr);
@@ -138,6 +162,232 @@ Type *type_func(Type **args, size_t num_args, Type *ret_type);
 Type *type_ptr(Type *elem);
 Sym *sym_get(const char *name);
 void resolve_stmt(Stmt *stmt, Type *expected_type, Sym *scope_start);
+
+void convert_arithmetic_type(ResolvedExpr *expr, Type *type) {
+#define TYPE_CONVERT(VAL)                                                                          \
+    {                                                                                              \
+        switch (type->kind) {                                                                      \
+        case TYPE_CHAR:                                                                            \
+            expr->val.ch = (char) VAL;                                                             \
+            break;                                                                                 \
+        case TYPE_SCHAR:                                                                           \
+            expr->val.sch = (signed char) VAL;                                                     \
+            break;                                                                                 \
+        case TYPE_UCHAR:                                                                           \
+            expr->val.uch = (unsigned char) VAL;                                                   \
+            break;                                                                                 \
+        case TYPE_SHORT:                                                                           \
+            expr->val.s = (short) VAL;                                                             \
+            break;                                                                                 \
+        case TYPE_USHORT:                                                                          \
+            expr->val.us = (unsigned short) VAL;                                                   \
+            break;                                                                                 \
+        case TYPE_INT:                                                                             \
+            expr->val.i = (int) VAL;                                                               \
+            break;                                                                                 \
+        case TYPE_UINT:                                                                            \
+            expr->val.ui = (unsigned int) VAL;                                                     \
+            break;                                                                                 \
+        case TYPE_LONG:                                                                            \
+            expr->val.l = (long) VAL;                                                              \
+            break;                                                                                 \
+        case TYPE_ULONG:                                                                           \
+            expr->val.ul = (unsigned long) VAL;                                                    \
+            break;                                                                                 \
+        case TYPE_LONGLONG:                                                                        \
+            expr->val.ll = (long long) VAL;                                                        \
+            break;                                                                                 \
+        case TYPE_ULONGLONG:                                                                       \
+            expr->val.ull = (unsigned long long) VAL;                                              \
+            break;                                                                                 \
+        case TYPE_FLOAT:                                                                           \
+            expr->val.f = (float) VAL;                                                             \
+            break;                                                                                 \
+        case TYPE_DOUBLE:                                                                          \
+            expr->val.d = (double) VAL;                                                            \
+            break;                                                                                 \
+        }                                                                                          \
+    }
+
+    switch (expr->type->kind) {
+    case TYPE_CHAR:
+        TYPE_CONVERT(expr->val.ch);
+        expr->type = type;
+        break;
+    case TYPE_SCHAR:
+        TYPE_CONVERT(expr->val.sch);
+        expr->type = type;
+        break;
+    case TYPE_UCHAR:
+        TYPE_CONVERT(expr->val.uch);
+        expr->type = type;
+        break;
+    case TYPE_SHORT:
+        TYPE_CONVERT(expr->val.s);
+        expr->type = type;
+        break;
+    case TYPE_USHORT:
+        TYPE_CONVERT(expr->val.us);
+        expr->type = type;
+        break;
+    case TYPE_INT:
+        TYPE_CONVERT(expr->val.i);
+        expr->type = type;
+        break;
+    case TYPE_UINT:
+        TYPE_CONVERT(expr->val.ui);
+        expr->type = type;
+        break;
+    case TYPE_LONG:
+        TYPE_CONVERT(expr->val.l);
+        expr->type = type;
+        break;
+    case TYPE_ULONG:
+        TYPE_CONVERT(expr->val.ul);
+        expr->type = type;
+        break;
+    case TYPE_ULONGLONG:
+        TYPE_CONVERT(expr->val.ull);
+        expr->type = type;
+        break;
+    case TYPE_FLOAT:
+        TYPE_CONVERT(expr->val.f);
+        expr->type = type;
+    case TYPE_DOUBLE:
+        TYPE_CONVERT(expr->val.d);
+        expr->type = type;
+    }
+#undef TYPE_CONVERT
+}
+
+void promote_integer(ResolvedExpr *operand) {
+    switch (operand->type->kind) {
+    case TYPE_CHAR:
+    case TYPE_UCHAR:
+    case TYPE_SCHAR:
+    case TYPE_SHORT:
+    case TYPE_USHORT:
+        convert_arithmetic_type(operand, type_int);
+    }
+}
+
+int ranks[TYPE_MAX] = {
+    [TYPE_CHAR] = 0,   [TYPE_SCHAR] = 0,    [TYPE_UCHAR] = 0,     [TYPE_SHORT] = 1,
+    [TYPE_USHORT] = 1, [TYPE_INT] = 2,      [TYPE_UINT] = 2,      [TYPE_LONG] = 3,
+    [TYPE_ULONG] = 3,  [TYPE_LONGLONG] = 4, [TYPE_ULONGLONG] = 4,
+};
+
+bool is_signed_type(Type *type) {
+    return ((type == type_int) || (type == type_long) || (type == type_longlong));
+}
+
+Type *convert_to_unsigned(Type *type) {
+    if (type == type_int) {
+        return type_uint;
+    }
+
+    if (type == type_long) {
+        return type_ulong;
+    }
+
+    if (type == type_longlong) {
+        return type_ulonglong;
+    }
+
+    assert(0);
+    return NULL;
+}
+
+void convert_operands_internal(ResolvedExpr *e1, ResolvedExpr *e2) {
+
+    // If either of the types is double, convert the other to double
+    if (e1->type == type_double || e2->type == type_double) {
+        convert_arithmetic_type(e1, type_double);
+        convert_arithmetic_type(e2, type_double);
+        return;
+    }
+
+    // If either of the types is float, convert the other to float
+    if (e1->type == type_float || e2->type == type_float) {
+        convert_arithmetic_type(e1, type_float);
+        convert_arithmetic_type(e2, type_float);
+        return;
+    }
+
+    // When dealing with integer types, first do integer promotion.
+    promote_integer(e1);
+    promote_integer(e2);
+
+    // If the types are same, we are done.
+    if (e1->type == e2->type) {
+        return;
+    }
+
+    // If both types are either signed or unsigned, the lesser rank is converted to
+    // type of higher rank.
+    if (is_signed_type(e1->type) == is_signed_type(e2->type)) {
+        (ranks[e1->type->kind] < ranks[e2->type->kind]) ? convert_arithmetic_type(e1, e2->type)
+                                                        : convert_arithmetic_type(e2, e1->type);
+        return;
+    }
+
+    // If unsigned type has rank greater than or equal to the rank of the signed then
+    // convert signed to the unsigned type.
+    {
+        if (!is_signed_type(e1->type) && (ranks[e1->type->kind] >= ranks[e2->type->kind])) {
+            convert_arithmetic_type(e2, e1->type);
+            return;
+        }
+
+        if (!is_signed_type(e2->type) && (ranks[e2->type->kind] >= ranks[e1->type->kind])) {
+            convert_arithmetic_type(e1, e2->type);
+            return;
+        }
+    }
+
+    // Rank of sign is greater than rank of unsigned and the unsigned can be represented in the
+    // signed type.
+    // eg. TYPE_LONG + TYPE_UINT
+    {
+        if (is_signed_type(e1->type) && e1->type->size > e2->type->size) {
+            convert_arithmetic_type(e2, e1->type);
+            return;
+        }
+
+        if (is_signed_type(e2->type) && e2->type->size > e1->type->size) {
+            convert_arithmetic_type(e1, e2->type);
+            return;
+        }
+    }
+
+    // rank of sign is greater than the rank of unsigned but unsigned can not be represented
+    // eg. TYPE_LONGLONG + TYPE_ULONG
+    {
+        Type *unsigned_type;
+
+        if (is_signed_type(e1->type)) {
+            unsigned_type = convert_to_unsigned(e1->type);
+            convert_arithmetic_type(e1, unsigned_type);
+            convert_arithmetic_type(e2, unsigned_type);
+            return;
+        }
+
+        // if above fails this is tautology, but for symmetry this is a good choice to add.
+        if (is_signed_type(e2->type)) {
+            unsigned_type = convert_to_unsigned(e2->type);
+            convert_arithmetic_type(e1, unsigned_type);
+            convert_arithmetic_type(e2, unsigned_type);
+            return;
+        }
+    }
+
+    assert(0);
+}
+
+void convert_operands(ResolvedExpr *e1, ResolvedExpr *e2) {
+    convert_operands_internal(e1, e2);
+    assert(e1->type == e2->type);
+}
 
 void insert_global_syms(Sym sym) {
     Sym *sym_alloc = xmalloc(sizeof(Sym));
@@ -162,35 +412,49 @@ void create_base_types() {
     insert_global_syms((Sym){
         .name = str_intern("char"), .state = SYM_RESOLVED, .kind = SYM_TYPE, .type = type_char});
 
-    insert_global_syms((Sym){
-        .name = str_intern("signed char"), .state = SYM_RESOLVED, .kind = SYM_TYPE, .type = type_schar});
+    insert_global_syms((Sym){.name = str_intern("signed char"),
+                             .state = SYM_RESOLVED,
+                             .kind = SYM_TYPE,
+                             .type = type_schar});
 
-    insert_global_syms((Sym){
-        .name = str_intern("unsigned char"), .state = SYM_RESOLVED, .kind = SYM_TYPE, .type = type_uchar});
+    insert_global_syms((Sym){.name = str_intern("unsigned char"),
+                             .state = SYM_RESOLVED,
+                             .kind = SYM_TYPE,
+                             .type = type_uchar});
 
     insert_global_syms((Sym){
         .name = str_intern("short"), .state = SYM_RESOLVED, .kind = SYM_TYPE, .type = type_short});
 
-    insert_global_syms((Sym){
-        .name = str_intern("unsigned short"), .state = SYM_RESOLVED, .kind = SYM_TYPE, .type = type_ushort});
+    insert_global_syms((Sym){.name = str_intern("unsigned short"),
+                             .state = SYM_RESOLVED,
+                             .kind = SYM_TYPE,
+                             .type = type_ushort});
 
     insert_global_syms((Sym){
         .name = str_intern("int"), .state = SYM_RESOLVED, .kind = SYM_TYPE, .type = type_int});
 
-    insert_global_syms((Sym){
-        .name = str_intern("unsigned int"), .state = SYM_RESOLVED, .kind = SYM_TYPE, .type = type_uint});
+    insert_global_syms((Sym){.name = str_intern("unsigned int"),
+                             .state = SYM_RESOLVED,
+                             .kind = SYM_TYPE,
+                             .type = type_uint});
 
     insert_global_syms((Sym){
         .name = str_intern("long"), .state = SYM_RESOLVED, .kind = SYM_TYPE, .type = type_long});
 
-    insert_global_syms((Sym){
-        .name = str_intern("unsigned long"), .state = SYM_RESOLVED, .kind = SYM_TYPE, .type = type_ulong});
+    insert_global_syms((Sym){.name = str_intern("unsigned long"),
+                             .state = SYM_RESOLVED,
+                             .kind = SYM_TYPE,
+                             .type = type_ulong});
 
-    insert_global_syms((Sym){
-        .name = str_intern("long long"), .state = SYM_RESOLVED, .kind = SYM_TYPE, .type = type_longlong});
+    insert_global_syms((Sym){.name = str_intern("long long"),
+                             .state = SYM_RESOLVED,
+                             .kind = SYM_TYPE,
+                             .type = type_longlong});
 
-    insert_global_syms((Sym){
-        .name = str_intern("unsigned long long"), .state = SYM_RESOLVED, .kind = SYM_TYPE, .type = type_ulonglong});
+    insert_global_syms((Sym){.name = str_intern("unsigned long long"),
+                             .state = SYM_RESOLVED,
+                             .kind = SYM_TYPE,
+                             .type = type_ulonglong});
 
     insert_global_syms((Sym){
         .name = str_intern("float"), .state = SYM_RESOLVED, .kind = SYM_TYPE, .type = type_float});
@@ -365,13 +629,14 @@ Type *create_type(Typespec *type) {
         ResolvedExpr array_size = {};
         if (type->array.expr) {
             array_size = resolve_expr(type->array.expr);
-            if (!array_size.is_const) {
-                fatal("Array size is expected to be a const");
+            convert_arithmetic_type(&array_size, type_size_t);
+            if (!array_size.is_const || !is_integer_type(array_size.type)) {
+                fatal("Illegal: Array size should be a constant of integer type");
             }
         }
 
         Type *elem = create_type(type->array.type);
-        return type_array(elem, array_size.val);
+        return type_array(elem, array_size.val.ull);
     }
 
     case TYPESPEC_FUNC: {
@@ -482,9 +747,9 @@ ResolvedExpr const_charptr_expr() {
     };
 }
 
-ResolvedExpr const_int_expr(int64_t val) {
+ResolvedExpr const_expr(Type *type, Val val) {
     return (ResolvedExpr){
-        .type = type_int,
+        .type = type,
         .is_const = true,
         .val = val,
     };
@@ -498,7 +763,7 @@ ResolvedExpr lvalue_expr(Type *type) {
     return (ResolvedExpr){.type = type, .is_lvalue = true};
 }
 
-int64_t eval_unary_int_expr(TokenKind op, int64_t val) {
+long long eval_unary_longlong_expr(TokenKind op, long long val) {
     switch (op) {
     case TOKEN_ADD:
         return val;
@@ -507,18 +772,79 @@ int64_t eval_unary_int_expr(TokenKind op, int64_t val) {
     case TOKEN_NEG:
         return ~val;
     case TOKEN_NOT:
-        return ~val;
+        return !val;
     default:
         fatal("Operator not supported for unary expressions");
     }
 }
 
-int64_t eval_binary_int_expr(int64_t left, int64_t right, TokenKind op) {
+unsigned long long eval_unary_ulonglong_expr(TokenKind op, unsigned long long val) {
+    switch (op) {
+    case TOKEN_ADD:
+        return val;
+    case TOKEN_SUB:
+        return -val;
+    case TOKEN_NEG:
+        return ~val;
+    case TOKEN_NOT:
+        return !val;
+    default:
+        fatal("Operator not supported for unary expressions");
+    }
+}
+
+long long eval_binary_longlong_expr(long long left, long long right, TokenKind op) {
     switch (op) {
     case TOKEN_MUL:
         return left * right;
     case TOKEN_DIV:
         return (int64_t) left / right;
+    case TOKEN_MOD:
+        return left % right;
+    case TOKEN_AND:
+        return left & right;
+    case TOKEN_LSHIFT:
+        return left << right;
+    case TOKEN_RSHIFT:
+        return left >> right;
+    case TOKEN_ADD:
+        return left + right;
+    case TOKEN_SUB:
+        return left - right;
+    case TOKEN_OR:
+        return left | right;
+    case TOKEN_XOR:
+        return left ^ right;
+
+    case TOKEN_EQ:
+        return left == right;
+    case TOKEN_LT:
+        return left < right;
+    case TOKEN_GT:
+        return left > right;
+    case TOKEN_LTEQ:
+        return left <= right;
+    case TOKEN_GTEQ:
+        return left >= right;
+    case TOKEN_NOTEQ:
+        return left != right;
+    case TOKEN_AND_AND:
+        return left && right;
+    case TOKEN_OR_OR:
+        return left || right;
+
+    default:
+        assert(0);
+    }
+}
+
+unsigned long long eval_binary_ulonglong_expr(unsigned long long left, unsigned long long right,
+                                              TokenKind op) {
+    switch (op) {
+    case TOKEN_MUL:
+        return left * right;
+    case TOKEN_DIV:
+        return left / right;
     case TOKEN_MOD:
         return left % right;
     case TOKEN_AND:
@@ -551,6 +877,7 @@ int64_t eval_binary_int_expr(int64_t left, int64_t right, TokenKind op) {
         return left && right;
     case TOKEN_OR_OR:
         return left || right;
+
     default:
         assert(0);
     }
@@ -559,21 +886,69 @@ int64_t eval_binary_int_expr(int64_t left, int64_t right, TokenKind op) {
 ResolvedExpr resolve_binary_expr(Expr *expr) {
     ResolvedExpr expr_left = resolve_expr(expr->binary_expr.left);
     ResolvedExpr expr_right = resolve_expr(expr->binary_expr.right);
+    convert_operands(&expr_left, &expr_right);
+    Type *bin_expr_type = expr_left.type;
 
-    if (expr_left.type != type_int || expr_right.type != type_int) {
-        fatal("expected int expression");
-    }
+    ResolvedExpr eval_const_expr = {};
+    bool const_eval = false;
 
     if (expr_left.is_const == true && expr_right.is_const == true) {
-        return const_int_expr(
-            eval_binary_int_expr(expr_left.val, expr_right.val, expr->binary_expr.op));
+        const_eval = true;
+        if (is_signed_type(bin_expr_type)) {
+            convert_arithmetic_type(&expr_left, type_longlong);
+            convert_arithmetic_type(&expr_right, type_longlong);
+            eval_const_expr.type = type_longlong;
+            eval_const_expr.val.ll = eval_binary_longlong_expr(expr_left.val.ll, expr_right.val.ll,
+                                                               expr->binary_expr.op);
+        } else {
+            convert_arithmetic_type(&expr_left, type_ulonglong);
+            convert_arithmetic_type(&expr_left, type_ulonglong);
+            eval_const_expr.type = type_ulonglong;
+            eval_const_expr.val.ull = eval_binary_ulonglong_expr(
+                expr_left.val.ull, expr_right.val.ull, expr->binary_expr.op);
+        }
     }
 
-    return rvalue_expr(type_int);
+    switch (expr->binary_expr.op) {
+    case TOKEN_MUL:
+    case TOKEN_DIV:
+    case TOKEN_MOD:
+    case TOKEN_AND:
+    case TOKEN_LSHIFT:
+    case TOKEN_RSHIFT:
+    case TOKEN_ADD:
+    case TOKEN_SUB:
+    case TOKEN_OR:
+    case TOKEN_XOR: {
+        if (const_eval == true) {
+            convert_arithmetic_type(&eval_const_expr, bin_expr_type);
+            return const_expr(bin_expr_type, eval_const_expr.val);
+        } else {
+            return rvalue_expr(bin_expr_type);
+        }
+    }
+
+    case TOKEN_EQ:
+    case TOKEN_LT:
+    case TOKEN_GT:
+    case TOKEN_LTEQ:
+    case TOKEN_GTEQ:
+    case TOKEN_NOTEQ:
+    case TOKEN_AND_AND:
+    case TOKEN_OR_OR: {
+        if (const_eval == true) {
+            convert_arithmetic_type(&eval_const_expr, type_int);
+            return const_expr(type_int, eval_const_expr.val);
+        } else {
+            return rvalue_expr(type_int);
+        }
+    }
+    }
 }
 
 ResolvedExpr resolve_name_expr(Expr *expr) {
     Sym *sym = sym_get(expr->name);
+    printf("get %s\n", expr->name);
     if (!sym) {
         fatal("Expected sym %s to exist", expr->name);
     }
@@ -582,9 +957,9 @@ ResolvedExpr resolve_name_expr(Expr *expr) {
     if (sym->kind == SYM_VAR) {
         return lvalue_expr(sym->type);
     } else if (sym->kind == SYM_CONST) {
-        return const_int_expr(sym->val);
+        return const_expr(type_int, sym->val);
     } else if (sym->kind == SYM_ENUM_MEM) {
-        return const_int_expr(sym->val);
+        return const_expr(type_int, sym->val);
     } else if (sym->kind == SYM_FUNC) {
         return rvalue_expr(sym->type);
     } else {
@@ -594,7 +969,7 @@ ResolvedExpr resolve_name_expr(Expr *expr) {
 }
 
 ResolvedExpr resolve_unary_expr(Expr *expr) {
-    // *,&,+,-,!,~
+    // *,&,+,-,~,!
     ResolvedExpr operand = resolve_expr(expr->unary_expr.expr);
     switch (expr->unary_expr.op) {
     case TOKEN_MUL:
@@ -605,16 +980,29 @@ ResolvedExpr resolve_unary_expr(Expr *expr) {
         return lvalue_expr(operand.type->ptr.elem);
     case TOKEN_AND:
         return rvalue_expr(type_ptr(operand.type));
+    case TOKEN_ADD:
+    case TOKEN_SUB:
+    case TOKEN_NEG:
+        promote_integer(&operand);
+        if (!is_arithmetic_type(operand.type)) {
+            fatal("unary operator +, -, ~ are applied on integer types only");
+        }
     default: {
-        if (operand.type->kind != TYPE_INT) {
-            fatal("unary operator +,-,!,~ are applied on integer types only");
-        }
-
         if (operand.is_const) {
-            return const_int_expr(eval_unary_int_expr(expr->unary_expr.op, operand.val));
+            Type *original_type = operand.type;
+            if (is_signed_type(operand.type)) {
+                convert_arithmetic_type(&operand, type_longlong);
+                operand.val.ll = eval_unary_longlong_expr(expr->unary_expr.op, operand.val.ll);
+            } else {
+                convert_arithmetic_type(&operand, type_ulonglong);
+                operand.val.ull = eval_unary_ulonglong_expr(expr->unary_expr.op, operand.val.ull);
+            }
+
+            convert_arithmetic_type(&operand, original_type);
+            return const_expr(original_type, operand.val);
         }
 
-        return rvalue_expr(type_int);
+        return rvalue_expr(operand.type);
     }
     }
 }
@@ -637,8 +1025,15 @@ ResolvedExpr resolve_field_expr(Expr *expr) {
 
 ResolvedExpr resolve_index_expr(Expr *expr) {
     ResolvedExpr index = resolve_expr(expr->index_expr.index);
-    if (index.type->kind != TYPE_INT) {
-        fatal("array indices can be of type int only");
+
+    if (!is_integer_type(index.type)) {
+        fatal("Illegal array indices can be of integer type only");
+    }
+
+    convert_arithmetic_type(&index, type_size_t);
+
+    if (index.type->kind != TYPE_SIZE_T) {
+        fatal("array indices can be of type integer only");
     }
 
     ResolvedExpr operand = resolve_expr(expr->index_expr.expr);
@@ -678,13 +1073,13 @@ ResolvedExpr resolve_cast_expr(Expr *expr) {
     ResolvedExpr original = resolve_expr(expr->cast_expr.expr);
     Type *casted_type = create_type(expr->cast_expr.type);
 
-    if (original.type->kind != TYPE_INT && original.type->kind != TYPE_PTR &&
+    if (!is_arithmetic_type(original.type) && original.type->kind != TYPE_PTR &&
         original.type->kind != TYPE_ARRAY) {
-        fatal("only int and pointer types can be casted");
+        fatal("only integer, float, doubles and pointer types can be casted");
     }
 
-    if (casted_type->kind != TYPE_INT && casted_type->kind != TYPE_PTR) {
-        fatal("can only cast to ints or pointer types");
+    if (!is_arithmetic_type(casted_type) && casted_type->kind != TYPE_PTR) {
+        fatal("can only cast to integers, float, doubles or pointer types");
     }
 
     return rvalue_expr(casted_type);
@@ -806,12 +1201,13 @@ ResolvedExpr resolve_compound_expr(Expr *expr, Type *expected_type) {
                 break;
             case INDEX_EXPR: {
                 ResolvedExpr expr_index = resolve_expr(val->index.index);
-                if (!expr_index.is_const) {
+                if (!expr_index.is_const || !is_integer_type(expr_index.type)) {
                     fatal("Field initializer index in array compound expression has to be a "
                           "constant");
                 }
+                convert_arithmetic_type(&expr_index, type_size_t);
 
-                array_index = (size_t) expr_index.val;
+                array_index = (size_t) expr_index.val.ull;
                 if (expected_type->array.size && array_index >= expected_type->array.size) {
                     fatal("compound literal initializing array out of bounds");
                 }
@@ -846,8 +1242,8 @@ ResolvedExpr resolve_compound_expr(Expr *expr, Type *expected_type) {
 ResolvedExpr resolve_ternary_expr(Expr *expr, Type *expected_type) {
     ResolvedExpr cond = resolve_expr(expr->ternary_expr.eval);
 
-    if (cond.type->kind != TYPE_INT && cond.type->kind != TYPE_PTR) {
-        fatal("ternary condition expression should be of type int or ptr");
+    if (!is_arithmetic_type(cond.type) && cond.type->kind != TYPE_PTR) {
+        fatal("ternary condition expression should be of type scalar");
     }
 
     ResolvedExpr then_expr = resolve_expected_expr(expr->ternary_expr.then_expr, expected_type);
@@ -858,7 +1254,8 @@ ResolvedExpr resolve_ternary_expr(Expr *expr, Type *expected_type) {
     }
 
     if (cond.is_const) {
-        return (cond.val) ? then_expr : else_expr;
+        convert_arithmetic_type(&cond, type_int);
+        return (cond.val.i) ? then_expr : else_expr;
     } else {
         return rvalue_expr(then_expr.type);
     }
@@ -867,13 +1264,13 @@ ResolvedExpr resolve_ternary_expr(Expr *expr, Type *expected_type) {
 ResolvedExpr resolve_sizeof_type(Expr *expr) {
     Type *type = create_type(expr->sizeof_type);
     complete_type(type);
-    return const_int_expr(type->size);
+    return const_expr(type_size_t, (Val){.ull = type->size});
 }
 
 ResolvedExpr resolve_sizeof_expr(Expr *expr) {
     ResolvedExpr type_expr = resolve_expr(expr->sizeof_expr);
     complete_type(type_expr.type);
-    return const_int_expr(type_expr.type->size);
+    return const_expr(type_size_t, (Val){.ull = type_expr.type->size});
 }
 
 ResolvedExpr resolve_expected_expr(Expr *expr, Type *expected_type) {
@@ -883,10 +1280,10 @@ ResolvedExpr resolve_expected_expr(Expr *expr, Type *expected_type) {
 
     switch (expr->kind) {
     case EXPR_INT:
-        return const_int_expr(expr->int_val);
+        return const_expr(type_int, (Val){.i = expr->int_val});
     case EXPR_UNARY:
         return resolve_unary_expr(expr);
-    case EXPR_BINARY:
+    case EXPR_BINARY: 
         return resolve_binary_expr(expr);
     case EXPR_TERNARY:
         return resolve_ternary_expr(expr, expected_type);
@@ -938,21 +1335,21 @@ Type *order_decl_var(Decl *decl) {
     return type;
 }
 
-Type *order_decl_const(Decl *decl, int64_t *val) {
+Type *order_decl_const(Decl *decl, int *val) {
     ResolvedExpr resolved_expr = resolve_expr(decl->const_decl.expr);
     if (!resolved_expr.is_const) {
         fatal("%s declared as constant, but the value assigned is not a constant", decl->name);
     }
-    *val = resolved_expr.val;
+    *val = resolved_expr.val.i;
     return resolved_expr.type;
 }
 
-void order_enum_const(const char *name, Expr *expr, int64_t *val) {
+void order_enum_const(const char *name, Expr *expr, int *val) {
     ResolvedExpr resolved_expr = resolve_expr(expr);
     if (!resolved_expr.is_const) {
         fatal("%s declared as constant, but the value assigned is not a constant", name);
     }
-    *val = resolved_expr.val;
+    *val = resolved_expr.val.i;
 }
 
 void resolve_global_sym(Sym *sym) {
@@ -972,7 +1369,7 @@ void resolve_global_sym(Sym *sym) {
     ResolvedExpr resolved_expr = {0};
     switch (decl->kind) {
     case DECL_CONST:
-        sym->type = order_decl_const(decl, &sym->val);
+        sym->type = order_decl_const(decl, &sym->val.i);
         break;
     case DECL_VAR:
         sym->type = order_decl_var(decl);
@@ -1000,10 +1397,10 @@ void resolve_global_sym(Sym *sym) {
             for (int i = 0; i < decl->enum_decl.num_enum_items; i++) {
                 Sym *sym = sym_get(decl->enum_decl.items[i].name);
                 if (!decl->enum_decl.items[i].expr) {
-                    sym->val = val;
+                    sym->val.i = val;
                 } else {
-                    order_enum_const(sym->name, decl->enum_decl.items[i].expr, &sym->val);
-                    val = sym->val;
+                    order_enum_const(sym->name, decl->enum_decl.items[i].expr, &sym->val.i);
+                    val = sym->val.i;
                 }
                 val++;
                 sym->state = SYM_RESOLVED;
@@ -1069,7 +1466,7 @@ void resolve_stmtblock(StmtBlock block, Type *expected_type, Sym *scope_start) {
 
 void resolve_cond_expr(Expr *expr) {
     ResolvedExpr cond_expr = resolve_expr(expr);
-    if (cond_expr.type->kind != TYPE_INT) {
+    if (!is_arithmetic_type(cond_expr.type)) {
         fatal("If expression should be of type int");
     }
 }

@@ -202,7 +202,7 @@ typedef struct {
     const char *start;
     const char *end;
     union {
-        uint64_t int_val;
+        int int_val;
         double float_val;
         const char *name;
         const char *str_val;
@@ -226,7 +226,7 @@ static inline int char_to_digit(char c) {
 
 void scan_int() {
     int base, digit;
-    uint64_t val = 0;
+    int val = 0;
 
     switch (*stream) {
     case '0':
@@ -262,7 +262,7 @@ void scan_int() {
             break;
         }
 
-        if (val > (uint64_t)(UINT64_MAX - digit) / base) {
+        if (val > (int)(INT_MAX - digit) / base) {
             syntax_error("Interger literal overflow");
 
             while (isdigit(*stream)) {
@@ -545,7 +545,6 @@ repeat:
         CASE1(';', TOKEN_SEMICOLON);
         CASE1('?', TOKEN_QUESTION);
         CASE1('~', TOKEN_NEG);
-        CASE1('!', TOKEN_NOT);
 
 #undef CASE1
 
@@ -587,6 +586,7 @@ repeat:
         CASE3('/', TOKEN_DIV, '=', TOKEN_DIV_ASSIGN);
         CASE3('%', TOKEN_MOD, '=', TOKEN_MOD_ASSIGN);
         CASE3('=', TOKEN_ASSIGN, '=', TOKEN_EQ);
+        CASE3('!', TOKEN_NOT, '=', TOKEN_NOTEQ);
 
 #undef CASE3
 
@@ -727,10 +727,12 @@ static void lex_test() {
     assert_token_int(0);
 
     /* floating point test */
-    init_stream(NULL, "0xff 1.2");
+    init_stream(NULL, "0xff 1.2 ! !=");
     assert(token.mod == TOKENMOD_HEX);
     assert_token_int(255);
     assert_token_float(1.2);
+    assert(match_token(TOKEN_NOT));
+    assert(match_token(TOKEN_NOTEQ));
     assert_token_eof();
 
     // char literal test
