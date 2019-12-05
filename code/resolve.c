@@ -1273,7 +1273,7 @@ ResolvedExpr resolve_sizeof_expr(Expr *expr) {
     return const_expr(type_size_t, (Val){.ull = type_expr.type->size});
 }
 
-ResolvedExpr resolve_expected_expr(Expr *expr, Type *expected_type) {
+ResolvedExpr resolve_expected_expr_internal(Expr *expr, Type *expected_type) {
     if (!expr) {
         return (ResolvedExpr){.type = type_void};
     }
@@ -1283,7 +1283,7 @@ ResolvedExpr resolve_expected_expr(Expr *expr, Type *expected_type) {
         return const_expr(type_int, (Val){.i = expr->int_val});
     case EXPR_UNARY:
         return resolve_unary_expr(expr);
-    case EXPR_BINARY: 
+    case EXPR_BINARY:
         return resolve_binary_expr(expr);
     case EXPR_TERNARY:
         return resolve_ternary_expr(expr, expected_type);
@@ -1309,6 +1309,21 @@ ResolvedExpr resolve_expected_expr(Expr *expr, Type *expected_type) {
         assert(0);
         return (ResolvedExpr){};
     }
+}
+
+Map expr_to_type;
+
+ResolvedExpr resolve_expected_expr(Expr *expr, Type *expected_type) {
+    ResolvedExpr *e;
+
+    if (!(e = (ResolvedExpr *)map_get(&expr_to_type, expr))) {
+        ResolvedExpr resolved = resolve_expected_expr_internal(expr, expected_type);
+        e = xmalloc(sizeof(ResolvedExpr));
+        *e = resolved;
+        map_put(&expr_to_type, expr, e);
+    }
+
+    return *e;
 }
 
 ResolvedExpr resolve_expr(Expr *expr) {
