@@ -258,12 +258,12 @@ void scan_int() {
         }
 
         if (digit >= base) {
-            syntax_error("digit %c is out of range for the base %d", *stream, base);
+            syntax_error(token.pos, "digit %c is out of range for the base %d", *stream, base);
             break;
         }
 
-        if (val > (int)(INT_MAX - digit) / base) {
-            syntax_error("Interger literal overflow");
+        if (val > (int) (INT_MAX - digit) / base) {
+            syntax_error(token.pos, "Interger literal overflow");
 
             while (isdigit(*stream)) {
                 stream++;
@@ -314,7 +314,7 @@ void scan_float() {
                 stream++;
             }
             if (!isdigit(*stream)) {
-                syntax_error("expected a digit but found '%c'", *stream);
+                syntax_error(token.pos, "expected a digit but found '%c'", *stream);
             }
             while (isdigit(*stream)) {
                 stream++;
@@ -324,7 +324,7 @@ void scan_float() {
 
     double val = strtod(digit_stream, NULL);
     if (val == HUGE_VAL) {
-        syntax_error("Float literal overflow");
+        syntax_error(token.pos, "Float literal overflow");
     }
     token.kind = TOKEN_FLOAT;
     token.float_val = val;
@@ -346,18 +346,18 @@ void scan_char() {
     stream++;
 
     if (*stream == '\'') {
-        syntax_error("char literal can not be empty");
+        syntax_error(token.pos, "char literal can not be empty");
     }
 
     if (*stream == '\n') {
-        syntax_error("can not have new line in a char literal");
+        syntax_error(token.pos, "can not have new line in a char literal");
     }
 
     if (*stream == '\\') {
         stream++;
         val = escape_to_char[(int) *stream];
         if (val == 0 && *stream != '0') {
-            syntax_error("Invalid char literal escape '\\%c'", *stream);
+            syntax_error(token.pos, "Invalid char literal escape '\\%c'", *stream);
         }
     } else {
         val = *stream;
@@ -366,7 +366,7 @@ void scan_char() {
     stream++;
 
     if (*stream != '\'') {
-        syntax_error("Expected literal ' but instead got '%c'", *stream);
+        syntax_error(token.pos, "Expected literal ' but instead got '%c'", *stream);
     } else {
         stream++;
     }
@@ -387,7 +387,7 @@ void scan_str() {
         val = *stream;
 
         if (*stream == '\n') {
-            syntax_error("String literals can not contain new line characters");
+            syntax_error(token.pos, "String literals can not contain new line characters");
         }
 
         if (*stream == '\\') {
@@ -397,7 +397,7 @@ void scan_str() {
             } else {
                 val = escape_to_char[(int) *stream];
                 if (val == 0 && *stream != '0') {
-                    syntax_error("invalid string literal escape '\\%c'", *stream);
+                    syntax_error(token.pos, "invalid string literal escape '\\%c'", *stream);
                 }
             }
         }
@@ -418,7 +418,7 @@ repeat:
     token.start = stream;
     token.mod = TOKENMOD_NONE;
     token.pos = (SrcPos){file_name, line_num};
-    
+
     switch (*stream) {
     case ' ':
     case '\n':
@@ -629,7 +629,7 @@ repeat:
         break;
 
     default:
-        syntax_error("Invalid '%c' token, skipping", *stream);
+        syntax_error(token.pos, "Invalid '%c' token, skipping", *stream);
         stream++;
         goto repeat;
     }

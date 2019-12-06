@@ -338,16 +338,6 @@ const char *str_intern(const char *str) {
     return str_intern_range(str, str + strlen(str));
 }
 
-void fatal(const char *fmt, ...) {
-    va_list args;
-    va_start(args, fmt);
-    printf("FATAL: ");
-    vprintf(fmt, args);
-    printf("\n");
-    va_end(args);
-    exit(1);
-}
-
 void map_test() {
     Map map = {};
     for (uint64_t i = 1; i < 1024; i++) {

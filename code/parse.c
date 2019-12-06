@@ -85,7 +85,7 @@ Decl *parse_decl_var() {
     } else if (match_token(TOKEN_ASSIGN)) {
         expr = parse_expr();
     } else {
-        syntax_error("var declaration expects a :type = expr or :type");
+        syntax_error(pos, "var declaration expects a :type = expr or :type");
         return NULL;
     }
 
@@ -162,7 +162,8 @@ Decl *parse_decl() {
     Decl *decl = parse_decl_opt();
 
     if (!decl && !is_token_eof()) {
-        syntax_error("Expected declaration keyword, got %s", token_info());
+        SrcPos pos = token.pos;
+        syntax_error(pos, "Expected declaration keyword, got %s", token_info());
     }
 
     return decl;
@@ -180,7 +181,8 @@ CompoundVal *parse_compound_val() {
     Expr *expr = parse_expr();
     if (match_token(TOKEN_ASSIGN)) {
         if (expr->kind != EXPR_NAME) {
-            syntax_error("Inside Compound literals value can be assigned to named fields only");
+            syntax_error(expr->pos,
+                         "Inside Compound literals value can be assigned to named fields only");
         }
         Expr *val = parse_expr();
         return compound_name(expr->name, val);
@@ -264,7 +266,7 @@ Expr *parse_simple_expr() {
     } else if (is_token(TOKEN_LBRACES)) {
         return parse_expr_compound(NULL);
     } else {
-        syntax_error("Unexpected token %s in expression", token_info());
+        syntax_error(pos, "Unexpected token %s in expression", token_info());
         return NULL;
     }
 }
@@ -466,7 +468,7 @@ Typespec *parse_type_base() {
         expect_token(TOKEN_RPAREN);
         return type;
     } else {
-        syntax_error("Unexpected token %s in type", token_info());
+        syntax_error(pos, "Unexpected token %s in type", token_info());
         return NULL;
     }
 }
@@ -505,7 +507,7 @@ Stmt *parse_simple_stmt() {
         if (expr->kind == EXPR_NAME) {
             return stmt_init(pos, expr->name, parse_expr());
         } else {
-            syntax_error("Expected a name before the := operator");
+            syntax_error(expr->pos, "Expected a name before the := operator");
         }
     } else if (is_assign_op()) {
         TokenKind op = token.kind;
@@ -591,7 +593,8 @@ Stmt *parse_stmt_for() {
     if (!is_token(TOKEN_RPAREN)) {
         next = parse_simple_stmt();
         if (next->kind == STMT_INIT) {
-            syntax_error("init statements are not allowed in for-statement's next clause");
+            syntax_error(next->pos,
+                         "init statements are not allowed in for-statement's next clause");
         }
     }
 
@@ -605,7 +608,7 @@ Stmt *parse_stmt_do_while() {
     StmtBlock block = parse_stmtblock();
 
     if (!match_keyword(keyword_while)) {
-        syntax_error("expected while after do block");
+        syntax_error(pos, "expected while after do block");
     }
 
     Stmt *stmt = stmt_do_while(pos, block, parse_paren_expr());
@@ -633,7 +636,8 @@ SwitchCase parse_switch_case() {
 
         if (match_keyword(keyword_default)) {
             if (is_default) {
-                syntax_error("Duplicate default labels in the switch clause");
+                SrcPos pos = token.pos;
+                syntax_error(pos, "Duplicate default labels in the switch clause");
             }
 
             is_default = true;
@@ -664,7 +668,8 @@ Stmt *parse_stmt_switch() {
     while (is_keyword(keyword_case) || is_keyword(keyword_default)) {
         if (is_keyword(keyword_default)) {
             if (is_default) {
-                syntax_error("Duplicate default labels in the switch clause");
+                SrcPos pos = token.pos;
+                syntax_error(pos, "Duplicate default labels in the switch clause");
             } else {
                 is_default = true;
             }

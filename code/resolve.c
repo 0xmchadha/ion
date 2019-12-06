@@ -75,6 +75,29 @@ typedef enum TypeKind {
     TYPE_MAX,
 } TypeKind;
 
+const char *type_kind[] = {
+    [TYPE_VOID] = "void",
+    [TYPE_CHAR] = "char",
+    [TYPE_SCHAR] = "signed char",
+    [TYPE_UCHAR] = "unsigned char",
+    [TYPE_SHORT] = "short",
+    [TYPE_USHORT] = "unsigned short",
+    [TYPE_INT] = "int",
+    [TYPE_UINT] = "unsigned int",
+    [TYPE_LONG] = "long",
+    [TYPE_ULONG] = "unsigned long",
+    [TYPE_LONGLONG] = "long long",
+    [TYPE_ULONGLONG] = "unsigned long long",
+    [TYPE_FLOAT] = "float",
+    [TYPE_DOUBLE] = "double",
+    [TYPE_PTR] = "pointer",
+    [TYPE_ARRAY] = "array",
+    [TYPE_STRUCT] = "struct",
+    [TYPE_UNION] = "union",
+    [TYPE_ENUM] = "enum",
+    [TYPE_FUNC] = "func",
+};
+
 Type *type_alloc(TypeKind);
 
 typedef enum TypeState {
@@ -465,7 +488,7 @@ void create_base_types() {
 
 void install_global_decl(Decl *decl) {
     if (sym_get(decl->name) != NULL) {
-        fatal("symbol %s already exists", decl->name);
+        fatal_error(decl, "symbol %s already exists", decl->name);
     }
 
     Type *type_aggregate;
@@ -610,13 +633,13 @@ Type *create_type(Typespec *type) {
     case TYPESPEC_NAME: {
         Sym *sym = sym_get(type->name);
         if (!sym) {
-            fatal("Type %s is not defined", type->name);
+            fatal_error(type, "Type %s is not defined", type->name);
         }
 
         if (sym->kind == SYM_TYPEDEF) {
             sym->type = create_type(sym->decl->typedef_decl.type);
         } else if (sym->kind != SYM_TYPE) {
-            fatal("Symbol %s is not a type", type->name);
+            fatal_error(type, "Symbol %s is not a type", type->name);
         }
 
         return sym->type;
@@ -631,7 +654,7 @@ Type *create_type(Typespec *type) {
             array_size = resolve_expr(type->array.expr);
             convert_arithmetic_type(&array_size, type_size_t);
             if (!array_size.is_const || !is_integer_type(array_size.type)) {
-                fatal("Illegal: Array size should be a constant of integer type");
+                fatal_error(type, "Illegal: Array size should be a constant of integer type");
             }
         }
 
@@ -763,7 +786,7 @@ ResolvedExpr lvalue_expr(Type *type) {
     return (ResolvedExpr){.type = type, .is_lvalue = true};
 }
 
-long long eval_unary_longlong_expr(TokenKind op, long long val) {
+long long eval_unary_longlong_expr(Expr *expr, TokenKind op, long long val) {
     switch (op) {
     case TOKEN_ADD:
         return val;
@@ -774,11 +797,11 @@ long long eval_unary_longlong_expr(TokenKind op, long long val) {
     case TOKEN_NOT:
         return !val;
     default:
-        fatal("Operator not supported for unary expressions");
+        fatal_error(expr, "Operator not supported for unary expressions");
     }
 }
 
-unsigned long long eval_unary_ulonglong_expr(TokenKind op, unsigned long long val) {
+unsigned long long eval_unary_ulonglong_expr(Expr *expr, TokenKind op, unsigned long long val) {
     switch (op) {
     case TOKEN_ADD:
         return val;
@@ -789,11 +812,11 @@ unsigned long long eval_unary_ulonglong_expr(TokenKind op, unsigned long long va
     case TOKEN_NOT:
         return !val;
     default:
-        fatal("Operator not supported for unary expressions");
+        fatal_error(expr, "Operator not supported for unary expressions");
     }
 }
 
-long long eval_binary_longlong_expr(long long left, long long right, TokenKind op) {
+long long eval_binary_longlong_expr(Expr *expr, long long left, long long right, TokenKind op) {
     switch (op) {
     case TOKEN_MUL:
         return left * right;
@@ -834,12 +857,12 @@ long long eval_binary_longlong_expr(long long left, long long right, TokenKind o
         return left || right;
 
     default:
-        assert(0);
+        fatal_error(expr, "Operator not supported for unary expressions");
     }
 }
 
-unsigned long long eval_binary_ulonglong_expr(unsigned long long left, unsigned long long right,
-                                              TokenKind op) {
+unsigned long long eval_binary_ulonglong_expr(Expr *expr, unsigned long long left,
+                                              unsigned long long right, TokenKind op) {
     switch (op) {
     case TOKEN_MUL:
         return left * right;
@@ -879,6 +902,7 @@ unsigned long long eval_binary_ulonglong_expr(unsigned long long left, unsigned 
         return left || right;
 
     default:
+        fatal_error(expr, "Operator not supported for unary expressions");
         assert(0);
     }
 }
@@ -898,14 +922,14 @@ ResolvedExpr resolve_binary_expr(Expr *expr) {
             convert_arithmetic_type(&expr_left, type_longlong);
             convert_arithmetic_type(&expr_right, type_longlong);
             eval_const_expr.type = type_longlong;
-            eval_const_expr.val.ll = eval_binary_longlong_expr(expr_left.val.ll, expr_right.val.ll,
-                                                               expr->binary_expr.op);
+            eval_const_expr.val.ll = eval_binary_longlong_expr(
+                expr, expr_left.val.ll, expr_right.val.ll, expr->binary_expr.op);
         } else {
             convert_arithmetic_type(&expr_left, type_ulonglong);
             convert_arithmetic_type(&expr_left, type_ulonglong);
             eval_const_expr.type = type_ulonglong;
             eval_const_expr.val.ull = eval_binary_ulonglong_expr(
-                expr_left.val.ull, expr_right.val.ull, expr->binary_expr.op);
+                expr, expr_left.val.ull, expr_right.val.ull, expr->binary_expr.op);
         }
     }
 
@@ -948,9 +972,8 @@ ResolvedExpr resolve_binary_expr(Expr *expr) {
 
 ResolvedExpr resolve_name_expr(Expr *expr) {
     Sym *sym = sym_get(expr->name);
-    printf("get %s\n", expr->name);
     if (!sym) {
-        fatal("Expected sym %s to exist", expr->name);
+        fatal_error(expr, "Expected sym %s to exist", expr->name);
     }
 
     resolve_global_sym(sym);
@@ -963,7 +986,7 @@ ResolvedExpr resolve_name_expr(Expr *expr) {
     } else if (sym->kind == SYM_FUNC) {
         return rvalue_expr(sym->type);
     } else {
-        fatal("%s can only be var, const or func", expr->name);
+        fatal_error(expr, "%s can only be var, const or func", expr->name);
     }
     return (ResolvedExpr){};
 }
@@ -975,7 +998,7 @@ ResolvedExpr resolve_unary_expr(Expr *expr) {
     case TOKEN_MUL:
         operand.type = ptr_decay(operand.type);
         if (operand.type->kind != TYPE_PTR) {
-            fatal("Can deref only a pointer type");
+            fatal_error(expr, "Can deref only a pointer type");
         }
         return lvalue_expr(operand.type->ptr.elem);
     case TOKEN_AND:
@@ -985,17 +1008,19 @@ ResolvedExpr resolve_unary_expr(Expr *expr) {
     case TOKEN_NEG:
         promote_integer(&operand);
         if (!is_arithmetic_type(operand.type)) {
-            fatal("unary operator +, -, ~ are applied on integer types only");
+            fatal_error(expr, "unary operator +, -, ~ are applied on integer types only");
         }
     default: {
         if (operand.is_const) {
             Type *original_type = operand.type;
             if (is_signed_type(operand.type)) {
                 convert_arithmetic_type(&operand, type_longlong);
-                operand.val.ll = eval_unary_longlong_expr(expr->unary_expr.op, operand.val.ll);
+                operand.val.ll =
+                    eval_unary_longlong_expr(expr, expr->unary_expr.op, operand.val.ll);
             } else {
                 convert_arithmetic_type(&operand, type_ulonglong);
-                operand.val.ull = eval_unary_ulonglong_expr(expr->unary_expr.op, operand.val.ull);
+                operand.val.ull =
+                    eval_unary_ulonglong_expr(expr, expr->unary_expr.op, operand.val.ull);
             }
 
             convert_arithmetic_type(&operand, original_type);
@@ -1011,7 +1036,7 @@ ResolvedExpr resolve_field_expr(Expr *expr) {
     ResolvedExpr base = resolve_expr(expr->field_expr.expr);
 
     if (base.type->kind != TYPE_STRUCT && base.type->kind != TYPE_UNION) {
-        fatal("Error: only struct types have access fields");
+        fatal_error(expr, "Error: only struct types have access fields");
     }
 
     for (int i = 0; i < base.type->aggregate.num_fields; i++) {
@@ -1020,25 +1045,26 @@ ResolvedExpr resolve_field_expr(Expr *expr) {
         }
     }
 
-    fatal("%s field does not exist with type %s", expr->field_expr.name, base.type->aggregate.name);
+    fatal_error(expr, "%s field does not exist with type %s", expr->field_expr.name,
+                base.type->aggregate.name);
 }
 
 ResolvedExpr resolve_index_expr(Expr *expr) {
     ResolvedExpr index = resolve_expr(expr->index_expr.index);
 
     if (!is_integer_type(index.type)) {
-        fatal("Illegal array indices can be of integer type only");
+        fatal_error(expr, "Illegal array indices can be of integer type only");
     }
 
     convert_arithmetic_type(&index, type_size_t);
 
     if (index.type->kind != TYPE_SIZE_T) {
-        fatal("array indices can be of type integer only");
+        fatal_error(expr, "array indices can be of type integer only");
     }
 
     ResolvedExpr operand = resolve_expr(expr->index_expr.expr);
     if (operand.type->kind != TYPE_PTR && operand.type->kind != TYPE_ARRAY) {
-        fatal("Only pointer and array types can be indexed");
+        fatal_error(expr, "Only pointer and array types can be indexed");
     }
 
     operand.type = ptr_decay(operand.type);
@@ -1048,12 +1074,12 @@ ResolvedExpr resolve_index_expr(Expr *expr) {
 ResolvedExpr resolve_call_expr(Expr *expr) {
     ResolvedExpr func = resolve_expr(expr->call_expr.expr);
     if (func.type->kind != TYPE_FUNC) {
-        fatal("Expected type to be func");
+        fatal_error(expr, "Expected type to be func");
     }
 
     if (expr->call_expr.num_args != func.type->func.num_args) {
-        fatal("func required %d arguments, but being passed %d", func.type->func.num_args,
-              expr->call_expr.num_args);
+        fatal_error(expr, "func required %d arguments, but being passed %d",
+                    func.type->func.num_args, expr->call_expr.num_args);
     }
 
     for (int i = 0; i < expr->call_expr.num_args; i++) {
@@ -1062,7 +1088,9 @@ ResolvedExpr resolve_call_expr(Expr *expr) {
         expr_args.type = ptr_decay(expr_args.type);
 
         if (expr_args.type != func.type->func.args[i]) {
-            fatal("func arg types %d do not match", i);
+            fatal_error(expr, "func arg types %d do not match. expr type %s but function type %s",
+                        i, type_kind[expr_args.type->kind],
+                        type_kind[func.type->func.args[i]->kind]);
         }
     }
 
@@ -1075,19 +1103,19 @@ ResolvedExpr resolve_cast_expr(Expr *expr) {
 
     if (!is_arithmetic_type(original.type) && original.type->kind != TYPE_PTR &&
         original.type->kind != TYPE_ARRAY) {
-        fatal("only integer, float, doubles and pointer types can be casted");
+        fatal_error(expr, "only integer, float, doubles and pointer types can be casted");
     }
 
     if (!is_arithmetic_type(casted_type) && casted_type->kind != TYPE_PTR) {
-        fatal("can only cast to integers, float, doubles or pointer types");
+        fatal_error(expr, "can only cast to integers, float, doubles or pointer types");
     }
 
     return rvalue_expr(casted_type);
 }
 
-size_t get_index_field(Type *type, const char *name) {
+size_t get_index_field(Expr *expr, Type *type, const char *name) {
     if (type->kind != TYPE_STRUCT && type->kind != TYPE_UNION) {
-        fatal("only struct and union types can have index to fields");
+        fatal_error(expr, "only struct and union types can have index to fields");
     }
 
     for (size_t i = 0; i < type->aggregate.num_fields; i++) {
@@ -1096,7 +1124,7 @@ size_t get_index_field(Type *type, const char *name) {
         }
     }
 
-    fatal("Named field does not exist in the type");
+    fatal_error(expr, "Named field does not exist in the type");
 }
 
 /* This is the trickiest of them all. In ion compound expressions can have */
@@ -1109,40 +1137,42 @@ ResolvedExpr resolve_compound_expr(Expr *expr, Type *expected_type) {
     // If both types are not void then they should match
     if (expected_type != compound_expr_type && expected_type != type_void &&
         compound_expr_type != type_void) {
-        fatal("compound expression type and expected type do not match");
+        fatal_error(expr, "compound expression type and expected type do not match");
     }
 
     // Take the type that is not void
     expected_type = (expected_type != type_void) ? expected_type : compound_expr_type;
 
     if (expected_type == type_void) {
-        fatal("compound expression type can not be void");
+        fatal_error(expr, "compound expression type can not be void");
     }
 
     complete_type(expected_type);
 
     if (expected_type->kind != TYPE_STRUCT && expected_type->kind != TYPE_UNION &&
         expected_type->kind != TYPE_ARRAY) {
-        fatal("compound expression requires struct or array types");
+        fatal_error(expr, "compound expression requires struct or array types");
     }
 
     if (expected_type->kind == TYPE_STRUCT || expected_type->kind == TYPE_UNION) {
         if (expr->compound_expr.type != NULL && expected_type != NULL) {
             if (create_type(expr->compound_expr.type) != expected_type) {
-                fatal("Expected type of compound literal should match the declared type of "
-                      "compound literal");
+                fatal_error(expr,
+                            "Expected type of compound literal should match the declared type of "
+                            "compound literal");
                 return rvalue_expr(type_void);
             }
         }
 
         if (expected_type->aggregate.num_fields < expr->compound_expr.num_args) {
-            fatal("Actual type has fewer memebers than being passed in the compound literal");
+            fatal_error(expr,
+                        "Actual type has fewer memebers than being passed in the compound literal");
             return rvalue_expr(type_void);
         }
 
         for (size_t i = 0, j = 0; i < expr->compound_expr.num_args; i++, j++) {
             if (j == expected_type->aggregate.num_fields) {
-                fatal("field initializer out of range");
+                fatal_error(expr, "field initializer out of range");
             }
 
             CompoundVal *val = expr->compound_expr.args[i];
@@ -1153,11 +1183,11 @@ ResolvedExpr resolve_compound_expr(Expr *expr, Type *expected_type) {
                 expr_literal = val->expr;
                 break;
             case NAME_EXPR:
-                j = get_index_field(expected_type, val->name.name);
+                j = get_index_field(expr, expected_type, val->name.name);
                 expr_literal = val->name.val;
                 break;
             case INDEX_EXPR:
-                fatal("Can not have index expression inside struct compound literal");
+                fatal_error(expr, "Can not have index expression inside struct compound literal");
                 break;
             default:
                 assert(0);
@@ -1166,8 +1196,9 @@ ResolvedExpr resolve_compound_expr(Expr *expr, Type *expected_type) {
             ResolvedExpr resolved_arg =
                 resolve_expected_expr(expr_literal, expected_type->aggregate.fields[j].type);
             if (resolved_arg.type != expected_type->aggregate.fields[j].type) {
-                fatal("type of expression in compound literal doesn't match the actual type of the "
-                      "field");
+                fatal_error(
+                    expr,
+                    "type of expression in compound literal: %s type expected %s", type_kind[resolved_arg.type->kind], type_kind[expected_type->aggregate.fields[j].type->kind]);
                 return rvalue_expr(type_void);
             }
         }
@@ -1176,20 +1207,22 @@ ResolvedExpr resolve_compound_expr(Expr *expr, Type *expected_type) {
 
             if ((compound_expr_type->array.elem != expected_type->array.elem) ||
                 (compound_expr_type->array.size != expected_type->array.size)) {
-                fatal("array compound literals types do not match");
+                fatal_error(expr, "array compound literals types do not match");
             }
         }
 
         if (expected_type->array.size && expected_type->array.size < expr->compound_expr.num_args) {
-            fatal("compound literal has more array members than the defined type: expected: %d "
-                  "actual :%d",
-                  expected_type->array.size, expr->compound_expr.num_args);
+            fatal_error(
+                expr,
+                "compound literal has more array members than the defined type: expected: %d "
+                "actual :%d",
+                expected_type->array.size, expr->compound_expr.num_args);
         }
 
         size_t max_index = 0;
         for (size_t i = 0, array_index = 0; i < expr->compound_expr.num_args; i++, array_index++) {
             if (expected_type->array.size && array_index >= expected_type->array.size) {
-                fatal("compound literal initializing array out of bounds");
+                fatal_error(expr, "compound literal initializing array out of bounds");
             }
 
             CompoundVal *val = expr->compound_expr.args[i];
@@ -1202,21 +1235,23 @@ ResolvedExpr resolve_compound_expr(Expr *expr, Type *expected_type) {
             case INDEX_EXPR: {
                 ResolvedExpr expr_index = resolve_expr(val->index.index);
                 if (!expr_index.is_const || !is_integer_type(expr_index.type)) {
-                    fatal("Field initializer index in array compound expression has to be a "
-                          "constant");
+                    fatal_error(expr,
+                                "Field initializer index in array compound expression has to be a "
+                                "constant");
                 }
                 convert_arithmetic_type(&expr_index, type_size_t);
 
                 array_index = (size_t) expr_index.val.ull;
                 if (expected_type->array.size && array_index >= expected_type->array.size) {
-                    fatal("compound literal initializing array out of bounds");
+                    fatal_error(expr, "compound literal initializing array out of bounds");
                 }
 
                 expr_literal = val->index.val;
                 break;
             }
             case NAME_EXPR:
-                fatal("Can not initialize named fields inside array compound expression");
+                fatal_error(expr,
+                            "Can not initialize named fields inside array compound expression");
                 break;
             default:
                 assert(0);
@@ -1225,9 +1260,8 @@ ResolvedExpr resolve_compound_expr(Expr *expr, Type *expected_type) {
             ResolvedExpr resolved_arg =
                 resolve_expected_expr(expr_literal, expected_type->array.elem);
             if (resolved_arg.type != expected_type->array.elem) {
-                fatal("type of expression in compound literal doesn't match the actual type of "
-                      "the "
-                      "field");
+                fatal_error(
+                            expr, "type of expression: %s expected type %s", type_kind[resolved_arg.type->kind], type_kind[resolved_arg.type->kind]);
                 return rvalue_expr(type_void);
             }
             max_index = MAX(max_index, array_index);
@@ -1243,14 +1277,14 @@ ResolvedExpr resolve_ternary_expr(Expr *expr, Type *expected_type) {
     ResolvedExpr cond = resolve_expr(expr->ternary_expr.eval);
 
     if (!is_arithmetic_type(cond.type) && cond.type->kind != TYPE_PTR) {
-        fatal("ternary condition expression should be of type scalar");
+        fatal_error(expr, "ternary condition expression should be of type scalar");
     }
 
     ResolvedExpr then_expr = resolve_expected_expr(expr->ternary_expr.then_expr, expected_type);
     ResolvedExpr else_expr = resolve_expected_expr(expr->ternary_expr.else_expr, expected_type);
 
     if (then_expr.type != else_expr.type) {
-        fatal("Ternary then else expressions types should match");
+        fatal_error(expr, "Ternary then else expressions types should match");
     }
 
     if (cond.is_const) {
@@ -1316,14 +1350,19 @@ Map expr_to_type;
 ResolvedExpr resolve_expected_expr(Expr *expr, Type *expected_type) {
     ResolvedExpr *e;
 
-    if (!(e = (ResolvedExpr *)map_get(&expr_to_type, expr))) {
-        ResolvedExpr resolved = resolve_expected_expr_internal(expr, expected_type);
-        e = xmalloc(sizeof(ResolvedExpr));
-        *e = resolved;
-        map_put(&expr_to_type, expr, e);
+    // if expr is null do not put it in the hash table.
+    if (expr) {
+        if (!(e = (ResolvedExpr *) map_get(&expr_to_type, expr))) {
+            ResolvedExpr resolved = resolve_expected_expr_internal(expr, expected_type);
+            e = xmalloc(sizeof(ResolvedExpr));
+            *e = resolved;
+            map_put(&expr_to_type, expr, e);
+        } else {
+            return *e;
+        }
     }
 
-    return *e;
+    return resolve_expected_expr_internal(expr, expected_type);
 }
 
 ResolvedExpr resolve_expr(Expr *expr) {
@@ -1336,14 +1375,14 @@ Type *order_decl_var(Decl *decl) {
     if (decl->var_decl.expr) {
         ResolvedExpr expr = resolve_expected_expr(decl->var_decl.expr, type);
         if (type != type_void && type != expr.type) {
-            fatal("expression type and var type do not match for %s", decl->name);
+            fatal_error(decl, "expression type and var type do not match for %s", decl->name);
         }
 
         type = expr.type;
     }
 
     if (type == type_void) {
-        fatal("%s var declared as void. This is illegal", decl->name);
+        fatal_error(decl, "%s var declared as void. This is illegal", decl->name);
     }
 
     complete_type(type);
@@ -1353,7 +1392,8 @@ Type *order_decl_var(Decl *decl) {
 Type *order_decl_const(Decl *decl, int *val) {
     ResolvedExpr resolved_expr = resolve_expr(decl->const_decl.expr);
     if (!resolved_expr.is_const) {
-        fatal("%s declared as constant, but the value assigned is not a constant", decl->name);
+        fatal_error(decl, "%s declared as constant, but the value assigned is not a constant",
+                    decl->name);
     }
     *val = resolved_expr.val.i;
     return resolved_expr.type;
@@ -1362,7 +1402,8 @@ Type *order_decl_const(Decl *decl, int *val) {
 void order_enum_const(const char *name, Expr *expr, int *val) {
     ResolvedExpr resolved_expr = resolve_expr(expr);
     if (!resolved_expr.is_const) {
-        fatal("%s declared as constant, but the value assigned is not a constant", name);
+        fatal_error(expr, "%s declared as constant, but the value assigned is not a constant",
+                    name);
     }
     *val = resolved_expr.val.i;
 }
@@ -1375,7 +1416,7 @@ void resolve_global_sym(Sym *sym) {
     Decl *decl = sym->decl;
 
     if (sym->state == SYM_RESOLVING) {
-        fatal("illegal value cycle while resolving %s in types", sym->name);
+        fatal_error(decl, "illegal value cycle while resolving %s in types", sym->name);
     }
 
     sym->state = SYM_RESOLVING;
@@ -1482,7 +1523,7 @@ void resolve_stmtblock(StmtBlock block, Type *expected_type, Sym *scope_start) {
 void resolve_cond_expr(Expr *expr) {
     ResolvedExpr cond_expr = resolve_expr(expr);
     if (!is_arithmetic_type(cond_expr.type)) {
-        fatal("If expression should be of type int");
+        fatal_error(expr, "If expression should be of type int");
     }
 }
 
@@ -1497,7 +1538,7 @@ void resolve_stmt(Stmt *stmt, Type *expected_type, Sym *scope_start) {
     case STMT_RETURN: {
         ResolvedExpr expr = resolve_expected_expr(stmt->stmt_return.expr, expected_type);
         if (expr.type != expected_type) {
-            fatal("Return type of func doesn't match the function signature");
+            fatal_error(stmt, "Return type of func doesn't match the function signature");
         }
         break;
     }
@@ -1558,7 +1599,7 @@ void resolve_stmt(Stmt *stmt, Type *expected_type, Sym *scope_start) {
             for (size_t j = 0; j < stmt->stmt_switch.cases->num_exprs; j++) {
                 ResolvedExpr expr_case = resolve_expr(stmt->stmt_switch.cases->expr[j]);
                 if (expr_case.type != switch_expr.type) {
-                    fatal("switch and case expression types should match");
+                    fatal_error(stmt, "switch and case expression types should match");
                 }
             }
 
@@ -1574,20 +1615,23 @@ void resolve_stmt(Stmt *stmt, Type *expected_type, Sym *scope_start) {
         ResolvedExpr right_expr = resolve_expr(stmt->stmt_assign.right_expr);
 
         if (left_expr.type->kind == TYPE_ARRAY) {
-            fatal("can not assign to lvalue of type array");
+            fatal_error(stmt, "can not assign to lvalue of type array");
         }
 
         if (!left_expr.is_lvalue) {
-            fatal("Can not assign value to non lvalue expression");
+            fatal_error(stmt, "Can not assign value to non lvalue expression");
         }
 
         if (right_expr.type != type_void) {
             if (left_expr.type != right_expr.type) {
-                fatal("Left and right expression types do not match in the assignment statement");
+                fatal_error(
+                    stmt,
+                    "Left and right expression types do not match in the assignment statement");
             }
         } else {
             if (left_expr.type->kind != TYPE_INT) {
-                fatal("can only use %s with type int", token_kind_name(stmt->stmt_assign.op));
+                fatal_error(stmt, "can only use %s with type int",
+                            token_kind_name(stmt->stmt_assign.op));
             }
         }
 
@@ -1631,88 +1675,91 @@ void install_global_decls(DeclSet *declset) {
 
 void resolve_test() {
     const char *decl[] = {
-
         // test enum
-        "enum enumD{A=F,B,C}",
-        "enum enumE{F=3,G}",
-        "var testenumarr :int[C] = {1,2,3,4,5}",
-        // Test functions and Statements
-        //      check return statement matching the type
-        "struct funcTest1 {i,j :int;}",
-        "union testunion {i, j :int;}",
-        "var testvarunion : testunion",
-        "var testvari :int = testvarunion.i",
-        "func foo1(a :int):funcTest1 {return funcTest1{1,2};}",
-        "var Testa :int",
-        "func foo2(a :int):int {if (a) {return a;} else {return Testa;}}",
-        "func foo3():funcTest1 {return {1,2};}",
-        // Test type inference
-        "func foo4():int {i := funcTest1{1,2}; return 1;}",
-        "var i:int",
-        "var j:int",
-        "var k:int*",
-        "var m:int*",
-        "var q:S*",
-        "struct S {t : T*;}",
-        "struct T {i:int; s : S*;}",
-        "func hello(i :int*, j:int*):int {}",
-        "typedef D = func(int,int):int",
-        "typedef E = S*",
-        "var p:int[o]",
-        "const o = 1+2",
-        "const oo = !1",
-        "const pp = ~2",
-        // test struct fields.. negative tests are also evaluated.
-        "struct TestA {a: TestB*;}",
-        "struct TestB {t: TestA;}",
-        "var test :TestA",
-        "var test2:TestB* = test.a",
-        /* // test index fields */
-        "struct TestC {a :int[10]; b :int**;}",
-        "var testc :TestC",
-        "var test4 = testc.b[0]",
-        "var test3:int = testc.a[0]",
+        /* "enum enumD{A=F,B,C}", */
+        /* "enum enumE{F=3,G}", */
+        /* "var testenumarr :int[C] = {1,2,3,4,5}", */
+        /* // Test functions and Statements */
+        /* //      check return statement matching the type */
+        /*  "struct funcTest1 {i,j :int;}",  */
+        /* "union testunion {i, j :int;}", */
+        /* "var testvarunion : testunion", */
+        /* "var testvari :int = testvarunion.i", */
+        /* "func foo1(a :int):funcTest1 {return funcTest1{1,2};}",  */
+        /* "var Testa :int", */
+        /* "func foo2(a :int):int {if (a) {return a;} else {return Testa;}}", */
+        /* "func foo3():funcTest1 {return {1,2};}", */
+        /* // Test type inference */
+        /* "func foo4():int {i := funcTest1{1,2}; return 1;}", */
+        /* "var i:int", */
+        /* "var j:int", */
+        /* "var k:int*", */
+        /* "var m:int*", */
+        /* "var q:S*", */
+        /* "struct S {t : T*;}", */
+        /* "struct T {i:int; s : S*;}", */
+        /* "func hello(i :int*, j:int*):int {}", */
+        /* "typedef D = func(int,int):int", */
+        /* "typedef E = S*", */
+        /* "var p:int[o]", */
+        /* "const o = 1+2", */
+        /* "const oo = !1", */
+        /* "const pp = ~2", */
+        /* /\* // test struct fields.. negative tests are also evaluated. *\/ */
+        /* "struct TestA {a: TestB*;}", */
+        /* "struct TestB {t: TestA;}", */
+        /* "var test :TestA", */
+        /* "var test2:TestB* = test.a", */
+        /* /\* // test index fields *\/ */
+        /* "struct TestC {a :int[10]; b :int**;}", */
+        /* "var testc :TestC", */
+        /* "var test4 = testc.b[0]", */
+        /* "var test3:int = testc.a[0]", */
 
-        // test call expr
-        "func test_func(i:int *, j:int *):int{}",
-        "var hh = test_func(&i,&j)",
-        "func test_func2(i: S*):int{}",
-        "var s:S*",
-        "var aaa = test_func2(s)",
-        // test cast expr
-        "var c = cast(int *, 10)",
-        "var d:int* = c",
-        "var e:int = cast(int, d)",
-        "var f:int[10]",
-        "var g:int = cast(int, f)",
-        /* // test teranary */
-        "var ta = g ? 2 : 3",
-        // test sizeof expr
-        "const size_int = sizeof(:int)",
-        "const size_int1 = sizeof(ta)",
+        /* /\* // test call expr *\/ */
+        /* "func test_func(i:int *, j:int *):int{}", */
+        /* "var hh = test_func(&i,&j)", */
+        /* "func test_func2(i: S*):int{}", */
+        /* "var s:S*", */
+        /* "var aaa = test_func2(s)", */
+        /* // test cast expr */
+        /* "var c = cast(int *, 10)", */
+        /* "var d:int* = c", */
+        /* "var e:int = cast(int, d)", */
+        /* "var f:int[10]",  */
+        /* "var g:int = cast(int, f)",  */
+        /* /\* /\\* // test teranary *\\/ *\/ */
+        /* "var ta = g ? 2 : 3", */
+        /* // test sizeof expr */
+        /* "const size_int = sizeof(:int)", */
+        /* "const size_int1 = sizeof(ta)", */
         // test compound literal
-        "struct C1 {a :int; b :int;}",
-        "var ca = C1{1,2}",
-        "struct C2 {a:C1; b:int;}",
-        "var cb :C2 = {{1,2},3}",
-        "var cc :int[3] = {1,2,4}",
-        "var cd = (:int[3]){1,2,3}",
-        "var ce =(:int[2][2]){{1,2}, {1,2}}",
-        "var cf:int[2][2] = {{2,3},{4,cd[0]}}",
-        "var cg = C1{1,2}",
-        "struct C3 {i :int; j:int*;}",
-        "var ck = C3{1, &ca.a}",
-        "struct C4 {i:int; j:int;}",
-        "func CF1(v: C4, w: C4):C4 {return {1,2};}",
-        "var co:C4 = CF1(C4{1,2}, {2,3})",
-        "struct cVector{x,y:int;}",
-        "var v: cVector = 0 ? {1,2} : {3,4}",
-        "var vs:cVector[2][2] = {{{1,2},{3,4}},{{5,6},{7,8}}}",
-        "struct nVector{x,y:int;}",
-        "var tVector = nVector{x=10,y=10}",
-        "var t2vector = (:int[2]){1,2}",
-        "var t3vector = (:int[2]){[1] = 1},",
-        "var testM = (:nVector[2]){{},{}}",
+        "var ce = (:int[2][2]) {{1,2}, {1,2}}",
+        /* "struct C1 {a :int; b :int;}",   */
+        /* "var ca = C1{1,2}", */
+        /* "var ck = C3{1, &ca.a}", */
+        /* "struct C2 {a:C1; b:int;}", */
+        /* "var cb :C2 = {{1,2},3}", */
+        /* "var cc :int[3] = {1,2,4}", */
+        /* "var cd = (:int[3]){1,2,3}", */
+        
+        /* "var cf:int[2][2] = {{2,3},{4,cd[0]}}", */
+        /* "var cg = C1{1,2}", */
+        /* "struct C3 {i :int; j:int*;}", */
+        
+
+
+        /* "struct C4 {i:int; j:int;}", */
+        /* "func CF1(v: C4, w: C4):C4 {return {1,2};}", */
+        /* "var co:C4 = CF1(C4{1,2}, {2,3})", */
+        /* "struct cVector{x,y:int;}", */
+        /* "var v: cVector = 0 ? {1,2} : {3,4}", */
+        /* "var vs:cVector[2][2] = {{{1,2},{3,4}},{{5,6},{7,8}}}", */
+        /* "struct nVector{x,y:int;}", */
+        /* "var tVector = nVector{x=10,y=10}", */
+        /* "var t2vector = (:int[2]){1,2}", */
+        /* "var t3vector = (:int[2]){[1] = 1},", */
+        /* "var testM = (:nVector[2]){{},{}}", */
     };
 
     create_base_types();
