@@ -77,6 +77,7 @@ typedef struct StmtAssign {
 typedef struct StmtInit {
     const char *name;
     Expr *expr;
+    void *type;
 } StmtInit;
 
 typedef struct Stmt {

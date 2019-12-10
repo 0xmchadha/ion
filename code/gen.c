@@ -76,7 +76,7 @@ const char *typespec_to_cdecl(Typespec *t, const char *gen) {
         return typespec_to_cdecl(t->ptr.type, ((gen == "") ? strf("*") : strf("*(%s)", gen)));
     case TYPESPEC_ARRAY:
         if (gen == "") {
-            return typespec_to_cdecl(t->array.type, strf("[%d]", gen_expr(t->array.expr)));
+            return typespec_to_cdecl(t->array.type, strf("[%s]", gen_expr(t->array.expr)));
         } else {
             return typespec_to_cdecl(t->array.type, strf("(%s)[%s]", gen, gen_expr(t->array.expr)));
         }
@@ -323,8 +323,7 @@ void gen_stmt(Stmt *stmt) {
         genln("%s;", gen_expr(stmt->expr));
         break;
     case STMT_INIT: {
-        ResolvedExpr expr = resolve_expr(stmt->stmt_init.expr);
-        genln("%s = %s;", type_to_cdecl(expr.type, stmt->stmt_init.name),
+        genln("%s = %s;", type_to_cdecl(stmt->stmt_init.type, stmt->stmt_init.name),
               gen_expr(stmt->stmt_init.expr));
         break;
     }
@@ -378,8 +377,7 @@ void gen_stmt(Stmt *stmt) {
         if (stmt->stmt_for.init) {
             Stmt *init = stmt->stmt_for.init;
             if (init->kind == STMT_INIT) {
-                ResolvedExpr expr = resolve_expr(init->stmt_init.expr);
-                str = strf("%s%s; ", str, type_to_cdecl(expr.type, init->stmt_init.name));
+                str = strf("%s = %s; ", str, type_to_cdecl(init->stmt_init.type, init->stmt_init.name));
             } else if (init->kind == STMT_ASSIGN) {
                 str = strf("%s%s %s %s;", str, gen_expr(init->stmt_assign.left_expr),
                            token_kind_name(init->stmt_assign.op),
@@ -498,7 +496,7 @@ void gen_c_code(const char *code) {
     gen_preamble();
     forward_declare_types();
     generate_types();
-    //    forward_declare_functions();
+
     generate_functions();
 
     printf("%s", gen_buf);
@@ -520,7 +518,7 @@ void gen_test() {
         "func fact_iter(n: int): int { r := 1; for (i := 2; i <= n; i++) { r *= i; } return r; }\n"
         "func fact_rec(n: int): int { if (n == 0) { return 1; } else { return n * fact_rec(n-1); } "
         "}\n"
-#if 0
+
         "func f1() { v := Vector{1, 2}; j := i; i++; j++; v.x = 2*j; }\n"
         "func f2(n: int): int { return 2*n; }\n"
         "func f3(x: int): int { if (x) { return -x; } else if (x % 2 == 0) { return 42; } else { "
@@ -531,7 +529,7 @@ void gen_test() {
         "} }\n"
         "func f6(n: int): int { p := 1; while (n) { p *= 2; n--; } return p; }\n"
         "func f7(n: int): int { p := 1; do { p *= 2; n--; } while (n); return p; }\n"
-#endif
+
         "const n = 1+sizeof(p)\n"
         "var p: T*\n"
         "struct T { a: int[n]; }\n"

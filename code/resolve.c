@@ -168,6 +168,10 @@ bool is_arithmetic_type(Type *type) {
     return (type->kind >= TYPE_CHAR && type->kind <= TYPE_DOUBLE) ? true : false;
 }
 
+bool is_scalar_type(Type *type) {
+    return (type->kind == TYPE_PTR || is_arithmetic_type(type));
+}
+
 Decl **ordered_decls;
 Map global_sym_map;
 Sym **global_sym_list;
@@ -186,7 +190,22 @@ Type *type_ptr(Type *elem);
 Sym *sym_get(const char *name);
 void resolve_stmt(Stmt *stmt, Type *expected_type, Sym *scope_start);
 
-void convert_arithmetic_type(ResolvedExpr *expr, Type *type) {
+bool is_type_conversion_legal(Type *src, Type *dst) {
+    if (is_arithmetic_type(src) && is_arithmetic_type(dst)) {
+        return true;
+    }
+
+    if (src->kind == TYPE_PTR && dst->kind == TYPE_PTR) {
+        if (src->ptr.elem->kind == TYPE_VOID || dst->ptr.elem->kind == TYPE_VOID) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+void convert_operand_type(ResolvedExpr *expr, Type *type) {
+
 #define TYPE_CONVERT(VAL)                                                                          \
     {                                                                                              \
         switch (type->kind) {                                                                      \
@@ -229,57 +248,52 @@ void convert_arithmetic_type(ResolvedExpr *expr, Type *type) {
         case TYPE_DOUBLE:                                                                          \
             expr->val.d = (double) VAL;                                                            \
             break;                                                                                 \
+        default:                                                                                   \
+            expr->is_const = false;                                                                \
         }                                                                                          \
     }
 
     switch (expr->type->kind) {
     case TYPE_CHAR:
         TYPE_CONVERT(expr->val.ch);
-        expr->type = type;
         break;
     case TYPE_SCHAR:
         TYPE_CONVERT(expr->val.sch);
-        expr->type = type;
         break;
     case TYPE_UCHAR:
         TYPE_CONVERT(expr->val.uch);
-        expr->type = type;
         break;
     case TYPE_SHORT:
         TYPE_CONVERT(expr->val.s);
-        expr->type = type;
         break;
     case TYPE_USHORT:
         TYPE_CONVERT(expr->val.us);
-        expr->type = type;
         break;
     case TYPE_INT:
         TYPE_CONVERT(expr->val.i);
-        expr->type = type;
         break;
     case TYPE_UINT:
         TYPE_CONVERT(expr->val.ui);
-        expr->type = type;
         break;
     case TYPE_LONG:
         TYPE_CONVERT(expr->val.l);
-        expr->type = type;
         break;
     case TYPE_ULONG:
         TYPE_CONVERT(expr->val.ul);
-        expr->type = type;
         break;
     case TYPE_ULONGLONG:
         TYPE_CONVERT(expr->val.ull);
-        expr->type = type;
         break;
     case TYPE_FLOAT:
         TYPE_CONVERT(expr->val.f);
-        expr->type = type;
+        break;
     case TYPE_DOUBLE:
         TYPE_CONVERT(expr->val.d);
-        expr->type = type;
+        break;
     }
+
+    expr->type = type;
+
 #undef TYPE_CONVERT
 }
 
@@ -290,7 +304,7 @@ void promote_integer(ResolvedExpr *operand) {
     case TYPE_SCHAR:
     case TYPE_SHORT:
     case TYPE_USHORT:
-        convert_arithmetic_type(operand, type_int);
+        convert_operand_type(operand, type_int);
     }
 }
 
@@ -301,7 +315,17 @@ int ranks[TYPE_MAX] = {
 };
 
 bool is_signed_type(Type *type) {
-    return ((type == type_int) || (type == type_long) || (type == type_longlong));
+    switch (type->kind) {
+    case TYPE_CHAR:
+    case TYPE_SCHAR:
+    case TYPE_SHORT:
+    case TYPE_INT:
+    case TYPE_LONG:
+    case TYPE_LONGLONG:
+        return true;
+    }
+
+    return false;
 }
 
 Type *convert_to_unsigned(Type *type) {
@@ -325,15 +349,15 @@ void convert_operands_internal(ResolvedExpr *e1, ResolvedExpr *e2) {
 
     // If either of the types is double, convert the other to double
     if (e1->type == type_double || e2->type == type_double) {
-        convert_arithmetic_type(e1, type_double);
-        convert_arithmetic_type(e2, type_double);
+        convert_operand_type(e1, type_double);
+        convert_operand_type(e2, type_double);
         return;
     }
 
     // If either of the types is float, convert the other to float
     if (e1->type == type_float || e2->type == type_float) {
-        convert_arithmetic_type(e1, type_float);
-        convert_arithmetic_type(e2, type_float);
+        convert_operand_type(e1, type_float);
+        convert_operand_type(e2, type_float);
         return;
     }
 
@@ -349,8 +373,8 @@ void convert_operands_internal(ResolvedExpr *e1, ResolvedExpr *e2) {
     // If both types are either signed or unsigned, the lesser rank is converted to
     // type of higher rank.
     if (is_signed_type(e1->type) == is_signed_type(e2->type)) {
-        (ranks[e1->type->kind] < ranks[e2->type->kind]) ? convert_arithmetic_type(e1, e2->type)
-                                                        : convert_arithmetic_type(e2, e1->type);
+        (ranks[e1->type->kind] < ranks[e2->type->kind]) ? convert_operand_type(e1, e2->type)
+                                                        : convert_operand_type(e2, e1->type);
         return;
     }
 
@@ -358,12 +382,12 @@ void convert_operands_internal(ResolvedExpr *e1, ResolvedExpr *e2) {
     // convert signed to the unsigned type.
     {
         if (!is_signed_type(e1->type) && (ranks[e1->type->kind] >= ranks[e2->type->kind])) {
-            convert_arithmetic_type(e2, e1->type);
+            convert_operand_type(e2, e1->type);
             return;
         }
 
         if (!is_signed_type(e2->type) && (ranks[e2->type->kind] >= ranks[e1->type->kind])) {
-            convert_arithmetic_type(e1, e2->type);
+            convert_operand_type(e1, e2->type);
             return;
         }
     }
@@ -373,12 +397,12 @@ void convert_operands_internal(ResolvedExpr *e1, ResolvedExpr *e2) {
     // eg. TYPE_LONG + TYPE_UINT
     {
         if (is_signed_type(e1->type) && e1->type->size > e2->type->size) {
-            convert_arithmetic_type(e2, e1->type);
+            convert_operand_type(e2, e1->type);
             return;
         }
 
         if (is_signed_type(e2->type) && e2->type->size > e1->type->size) {
-            convert_arithmetic_type(e1, e2->type);
+            convert_operand_type(e1, e2->type);
             return;
         }
     }
@@ -390,16 +414,16 @@ void convert_operands_internal(ResolvedExpr *e1, ResolvedExpr *e2) {
 
         if (is_signed_type(e1->type)) {
             unsigned_type = convert_to_unsigned(e1->type);
-            convert_arithmetic_type(e1, unsigned_type);
-            convert_arithmetic_type(e2, unsigned_type);
+            convert_operand_type(e1, unsigned_type);
+            convert_operand_type(e2, unsigned_type);
             return;
         }
 
         // if above fails this is tautology, but for symmetry this is a good choice to add.
         if (is_signed_type(e2->type)) {
             unsigned_type = convert_to_unsigned(e2->type);
-            convert_arithmetic_type(e1, unsigned_type);
-            convert_arithmetic_type(e2, unsigned_type);
+            convert_operand_type(e1, unsigned_type);
+            convert_operand_type(e2, unsigned_type);
             return;
         }
     }
@@ -421,10 +445,13 @@ void insert_global_syms(Sym sym) {
 }
 
 void export_c_func() {
+    Type **args = NULL;
+
+    buf_push(args, type_ptr(type_char));
     insert_global_syms((Sym){.name = str_intern("puts"),
                              .state = SYM_RESOLVED,
                              .kind = SYM_FUNC,
-                             .type = type_func(&(Type *){type_ptr(type_char)}, 1, type_int)});
+                             .type = type_func(args, 1, type_int)});
 }
 
 void create_base_types() {
@@ -652,7 +679,7 @@ Type *create_type(Typespec *type) {
         ResolvedExpr array_size = {};
         if (type->array.expr) {
             array_size = resolve_expr(type->array.expr);
-            convert_arithmetic_type(&array_size, type_size_t);
+            convert_operand_type(&array_size, type_size_t);
             if (!array_size.is_const || !is_integer_type(array_size.type)) {
                 fatal_error(type, "Illegal: Array size should be a constant of integer type");
             }
@@ -919,14 +946,14 @@ ResolvedExpr resolve_binary_expr(Expr *expr) {
     if (expr_left.is_const == true && expr_right.is_const == true) {
         const_eval = true;
         if (is_signed_type(bin_expr_type)) {
-            convert_arithmetic_type(&expr_left, type_longlong);
-            convert_arithmetic_type(&expr_right, type_longlong);
+            convert_operand_type(&expr_left, type_longlong);
+            convert_operand_type(&expr_right, type_longlong);
             eval_const_expr.type = type_longlong;
             eval_const_expr.val.ll = eval_binary_longlong_expr(
                 expr, expr_left.val.ll, expr_right.val.ll, expr->binary_expr.op);
         } else {
-            convert_arithmetic_type(&expr_left, type_ulonglong);
-            convert_arithmetic_type(&expr_left, type_ulonglong);
+            convert_operand_type(&expr_left, type_ulonglong);
+            convert_operand_type(&expr_left, type_ulonglong);
             eval_const_expr.type = type_ulonglong;
             eval_const_expr.val.ull = eval_binary_ulonglong_expr(
                 expr, expr_left.val.ull, expr_right.val.ull, expr->binary_expr.op);
@@ -945,7 +972,7 @@ ResolvedExpr resolve_binary_expr(Expr *expr) {
     case TOKEN_OR:
     case TOKEN_XOR: {
         if (const_eval == true) {
-            convert_arithmetic_type(&eval_const_expr, bin_expr_type);
+            convert_operand_type(&eval_const_expr, bin_expr_type);
             return const_expr(bin_expr_type, eval_const_expr.val);
         } else {
             return rvalue_expr(bin_expr_type);
@@ -961,7 +988,7 @@ ResolvedExpr resolve_binary_expr(Expr *expr) {
     case TOKEN_AND_AND:
     case TOKEN_OR_OR: {
         if (const_eval == true) {
-            convert_arithmetic_type(&eval_const_expr, type_int);
+            convert_operand_type(&eval_const_expr, type_int);
             return const_expr(type_int, eval_const_expr.val);
         } else {
             return rvalue_expr(type_int);
@@ -1014,16 +1041,16 @@ ResolvedExpr resolve_unary_expr(Expr *expr) {
         if (operand.is_const) {
             Type *original_type = operand.type;
             if (is_signed_type(operand.type)) {
-                convert_arithmetic_type(&operand, type_longlong);
+                convert_operand_type(&operand, type_longlong);
                 operand.val.ll =
                     eval_unary_longlong_expr(expr, expr->unary_expr.op, operand.val.ll);
             } else {
-                convert_arithmetic_type(&operand, type_ulonglong);
+                convert_operand_type(&operand, type_ulonglong);
                 operand.val.ull =
                     eval_unary_ulonglong_expr(expr, expr->unary_expr.op, operand.val.ull);
             }
 
-            convert_arithmetic_type(&operand, original_type);
+            convert_operand_type(&operand, original_type);
             return const_expr(original_type, operand.val);
         }
 
@@ -1056,7 +1083,7 @@ ResolvedExpr resolve_index_expr(Expr *expr) {
         fatal_error(expr, "Illegal array indices can be of integer type only");
     }
 
-    convert_arithmetic_type(&index, type_size_t);
+    convert_operand_type(&index, type_size_t);
 
     if (index.type->kind != TYPE_SIZE_T) {
         fatal_error(expr, "array indices can be of type integer only");
@@ -1107,7 +1134,7 @@ ResolvedExpr resolve_cast_expr(Expr *expr) {
     }
 
     if (!is_arithmetic_type(casted_type) && casted_type->kind != TYPE_PTR) {
-        fatal_error(expr, "can only cast to integers, float, doubles or pointer types");
+        fatal_error(expr, "can only cast to scalar(arithmetic, pointer) types");
     }
 
     return rvalue_expr(casted_type);
@@ -1196,9 +1223,9 @@ ResolvedExpr resolve_compound_expr(Expr *expr, Type *expected_type) {
             ResolvedExpr resolved_arg =
                 resolve_expected_expr(expr_literal, expected_type->aggregate.fields[j].type);
             if (resolved_arg.type != expected_type->aggregate.fields[j].type) {
-                fatal_error(
-                    expr,
-                    "type of expression in compound literal: %s type expected %s", type_kind[resolved_arg.type->kind], type_kind[expected_type->aggregate.fields[j].type->kind]);
+                fatal_error(expr, "type of expression in compound literal: %s type expected %s",
+                            type_kind[resolved_arg.type->kind],
+                            type_kind[expected_type->aggregate.fields[j].type->kind]);
                 return rvalue_expr(type_void);
             }
         }
@@ -1239,7 +1266,7 @@ ResolvedExpr resolve_compound_expr(Expr *expr, Type *expected_type) {
                                 "Field initializer index in array compound expression has to be a "
                                 "constant");
                 }
-                convert_arithmetic_type(&expr_index, type_size_t);
+                convert_operand_type(&expr_index, type_size_t);
 
                 array_index = (size_t) expr_index.val.ull;
                 if (expected_type->array.size && array_index >= expected_type->array.size) {
@@ -1260,8 +1287,8 @@ ResolvedExpr resolve_compound_expr(Expr *expr, Type *expected_type) {
             ResolvedExpr resolved_arg =
                 resolve_expected_expr(expr_literal, expected_type->array.elem);
             if (resolved_arg.type != expected_type->array.elem) {
-                fatal_error(
-                            expr, "type of expression: %s expected type %s", type_kind[resolved_arg.type->kind], type_kind[resolved_arg.type->kind]);
+                fatal_error(expr, "type of expression: %s expected type %s",
+                            type_kind[resolved_arg.type->kind], type_kind[resolved_arg.type->kind]);
                 return rvalue_expr(type_void);
             }
             max_index = MAX(max_index, array_index);
@@ -1288,7 +1315,7 @@ ResolvedExpr resolve_ternary_expr(Expr *expr, Type *expected_type) {
     }
 
     if (cond.is_const) {
-        convert_arithmetic_type(&cond, type_int);
+        convert_operand_type(&cond, type_int);
         return (cond.val.i) ? then_expr : else_expr;
     } else {
         return rvalue_expr(then_expr.type);
@@ -1351,16 +1378,16 @@ ResolvedExpr resolve_expected_expr(Expr *expr, Type *expected_type) {
     ResolvedExpr *e;
 
     // if expr is null do not put it in the hash table.
-    if (expr) {
-        if (!(e = (ResolvedExpr *) map_get(&expr_to_type, expr))) {
-            ResolvedExpr resolved = resolve_expected_expr_internal(expr, expected_type);
-            e = xmalloc(sizeof(ResolvedExpr));
-            *e = resolved;
-            map_put(&expr_to_type, expr, e);
-        } else {
-            return *e;
-        }
-    }
+    /* if (expr) { */
+    /*     if (!(e = (ResolvedExpr *) map_get(&expr_to_type, expr))) { */
+    /*         ResolvedExpr resolved = resolve_expected_expr_internal(expr, expected_type); */
+    /*         e = xmalloc(sizeof(ResolvedExpr)); */
+    /*         *e = resolved; */
+    /*         map_put(&expr_to_type, expr, e); */
+    /*     } else { */
+    /*         return *e; */
+    /*     } */
+    /* } */
 
     return resolve_expected_expr_internal(expr, expected_type);
 }
@@ -1623,14 +1650,18 @@ void resolve_stmt(Stmt *stmt, Type *expected_type, Sym *scope_start) {
         }
 
         if (right_expr.type != type_void) {
+            if (is_type_conversion_legal(left_expr.type, right_expr.type)) {
+                convert_operand_type(&left_expr, right_expr.type);
+            }
+
             if (left_expr.type != right_expr.type) {
                 fatal_error(
                     stmt,
                     "Left and right expression types do not match in the assignment statement");
             }
         } else {
-            if (left_expr.type->kind != TYPE_INT) {
-                fatal_error(stmt, "can only use %s with type int",
+            if (!is_scalar_type(left_expr.type)) {
+                fatal_error(stmt, "can only use %s with a scalar type",
                             token_kind_name(stmt->stmt_assign.op));
             }
         }
@@ -1641,6 +1672,7 @@ void resolve_stmt(Stmt *stmt, Type *expected_type, Sym *scope_start) {
     case STMT_INIT: {
         ResolvedExpr rvalue_expr = resolve_expr(stmt->stmt_init.expr);
         sym_push_var(stmt->stmt_init.name, rvalue_expr.type, scope_start);
+        stmt->stmt_init.type = rvalue_expr.type;
         break;
     }
     case STMT_EXPR:
@@ -1673,93 +1705,144 @@ void install_global_decls(DeclSet *declset) {
     }
 }
 
+void test_type_conversion() {
+    ResolvedExpr expr;
+#define promote_integer(set_type, promoted_type)                                                   \
+    {                                                                                              \
+        expr.type = set_type;                                                                      \
+        promote_integer(&expr);                                                                    \
+        assert(expr.type == promoted_type);                                                        \
+    }
+
+    promote_integer(type_char, type_int);
+    promote_integer(type_schar, type_int);
+    promote_integer(type_uchar, type_int);
+    promote_integer(type_short, type_int);
+    promote_integer(type_ushort, type_int);
+    promote_integer(type_int, type_int);
+    promote_integer(type_uint, type_uint);
+    promote_integer(type_long, type_long);
+    promote_integer(type_ulong, type_ulong);
+    promote_integer(type_longlong, type_longlong);
+    promote_integer(type_ulonglong, type_ulonglong);
+    promote_integer(type_float, type_float);
+    promote_integer(type_double, type_double);
+
+#undef promote_integer
+    ResolvedExpr expr1, expr2;
+#define convert_arithmetic_type(type_first, type_second, converted_type)                           \
+    {                                                                                              \
+        expr1.type = type_first;                                                                   \
+        expr2.type = type_second;                                                                  \
+        convert_operands(&expr1, &expr2);                                                          \
+        assert(expr1.type == converted_type);                                                      \
+    }
+
+    convert_arithmetic_type(type_char, type_char, type_int);
+    convert_arithmetic_type(type_char, type_ushort, type_int);
+    convert_arithmetic_type(type_int, type_long, type_long);
+    convert_arithmetic_type(type_long, type_ulong, type_ulong);
+#undef convert_arithmetic_type
+
+    ResolvedExpr expr3;
+#define convert_operand_type(set_val, set_type, type_convert, new_val)                             \
+    {                                                                                              \
+        expr3.type = set_type;                                                                     \
+        expr3.val = set_val;                                                                       \
+        convert_operand_type(&expr3, type_convert);                                                \
+        assert(!memcmp(&expr3.val, &new_val, sizeof(Val)));                                        \
+    }
+
+    convert_operand_type((Val){.i = -1}, type_int, type_uint, (Val){.ui = UINT_MAX});
+}
+
 void resolve_test() {
+    test_type_conversion();
+
     const char *decl[] = {
         // test enum
-        /* "enum enumD{A=F,B,C}", */
-        /* "enum enumE{F=3,G}", */
-        /* "var testenumarr :int[C] = {1,2,3,4,5}", */
-        /* // Test functions and Statements */
-        /* //      check return statement matching the type */
-        /*  "struct funcTest1 {i,j :int;}",  */
-        /* "union testunion {i, j :int;}", */
-        /* "var testvarunion : testunion", */
-        /* "var testvari :int = testvarunion.i", */
-        /* "func foo1(a :int):funcTest1 {return funcTest1{1,2};}",  */
-        /* "var Testa :int", */
-        /* "func foo2(a :int):int {if (a) {return a;} else {return Testa;}}", */
-        /* "func foo3():funcTest1 {return {1,2};}", */
-        /* // Test type inference */
-        /* "func foo4():int {i := funcTest1{1,2}; return 1;}", */
-        /* "var i:int", */
-        /* "var j:int", */
-        /* "var k:int*", */
-        /* "var m:int*", */
-        /* "var q:S*", */
-        /* "struct S {t : T*;}", */
-        /* "struct T {i:int; s : S*;}", */
-        /* "func hello(i :int*, j:int*):int {}", */
-        /* "typedef D = func(int,int):int", */
-        /* "typedef E = S*", */
-        /* "var p:int[o]", */
-        /* "const o = 1+2", */
-        /* "const oo = !1", */
-        /* "const pp = ~2", */
-        /* /\* // test struct fields.. negative tests are also evaluated. *\/ */
-        /* "struct TestA {a: TestB*;}", */
-        /* "struct TestB {t: TestA;}", */
-        /* "var test :TestA", */
-        /* "var test2:TestB* = test.a", */
-        /* /\* // test index fields *\/ */
-        /* "struct TestC {a :int[10]; b :int**;}", */
-        /* "var testc :TestC", */
-        /* "var test4 = testc.b[0]", */
-        /* "var test3:int = testc.a[0]", */
+        "enum enumD{A=F,B,C}",
+        "enum enumE{F=3,G}",
+        "var testenumarr :int[C] = {1,2,3,4,5}",
+        // Test functions and Statements
+        //      check return statement matching the type
+        "struct funcTest1 {i,j :int;}",
+        "union testunion {i, j :int;}",
+        "var testvarunion : testunion",
+        "var testvari :int = testvarunion.i",
+        "func foo1(a :int):funcTest1 {return funcTest1{1,2};}",
+        "var Testa :int",
+        "func foo2(a :int):int {if (a) {return a;} else {return Testa;}}",
+        "func foo3():funcTest1 {return {1,2};}",
+        // Test type inference
+        "func foo4():int {i := funcTest1{1,2}; return 1;}",
+        "var i:int",
+        "var j:int",
+        "var k:int*",
+        "var m:int*",
+        "var q:S*",
+        "struct S {t : T*;}",
+        "struct T {i:int; s : S*;}",
+        "func hello(i :int*, j:int*):int {}",
+        "typedef D = func(int,int):int",
+        "typedef E = S*",
+        "var p:int[o]",
+        "const o = 1+2",
+        "const oo = !1",
+        "const pp = ~2",
+        /* // test struct fields.. negative tests are also evaluated. */
+        "struct TestA {a: TestB*;}",
+        "struct TestB {t: TestA;}",
+        "var test :TestA",
+        "var test2:TestB* = test.a",
+        /* // test index fields */
+        "struct TestC {a :int[10]; b :int**;}",
+        "var testc :TestC",
+        "var test4 = testc.b[0]",
+        "var test3:int = testc.a[0]",
 
-        /* /\* // test call expr *\/ */
-        /* "func test_func(i:int *, j:int *):int{}", */
-        /* "var hh = test_func(&i,&j)", */
-        /* "func test_func2(i: S*):int{}", */
-        /* "var s:S*", */
-        /* "var aaa = test_func2(s)", */
-        /* // test cast expr */
-        /* "var c = cast(int *, 10)", */
-        /* "var d:int* = c", */
-        /* "var e:int = cast(int, d)", */
-        /* "var f:int[10]",  */
-        /* "var g:int = cast(int, f)",  */
-        /* /\* /\\* // test teranary *\\/ *\/ */
-        /* "var ta = g ? 2 : 3", */
-        /* // test sizeof expr */
-        /* "const size_int = sizeof(:int)", */
-        /* "const size_int1 = sizeof(ta)", */
-        // test compound literal
+        /* // test call expr */
+        "func test_func(i:int *, j:int *):int{}",
+        "var hh = test_func(&i,&j)",
+        "func test_func2(i: S*):int{}",
+        "var s:S*",
+        "var aaa = test_func2(s)",
+        // test cast expr
+        "var c = cast(int *, 10)",
+        "var d:int* = c",
+        "var e:int = cast(int, d)",
+        "var f:int[10]",
+        "var g:int = cast(int, f)",
+        /* /\* // test teranary *\/ */
+        "var ta = g ? 2 : 3",
+        // test sizeof expr
+        "const size_int = sizeof(:int)",
+        "const size_int1 = sizeof(ta)",
+        //        test compound literal
         "var ce = (:int[2][2]) {{1,2}, {1,2}}",
-        /* "struct C1 {a :int; b :int;}",   */
-        /* "var ca = C1{1,2}", */
-        /* "var ck = C3{1, &ca.a}", */
-        /* "struct C2 {a:C1; b:int;}", */
-        /* "var cb :C2 = {{1,2},3}", */
-        /* "var cc :int[3] = {1,2,4}", */
-        /* "var cd = (:int[3]){1,2,3}", */
-        
-        /* "var cf:int[2][2] = {{2,3},{4,cd[0]}}", */
-        /* "var cg = C1{1,2}", */
-        /* "struct C3 {i :int; j:int*;}", */
-        
+        "struct C1 {a :int; b :int;}",
+        "var ca = C1{1,2}",
+        "var ck = C3{1, &ca.a}",
+        "struct C2 {a:C1; b:int;}",
+        "var cb :C2 = {{1,2},3}",
+        "var cc :int[3] = {1,2,4}",
+        "var cd = (:int[3]){1,2,3}",
 
+        "var cf:int[2][2] = {{2,3},{4,cd[0]}}",
+        "var cg = C1{1,2}",
+        "struct C3 {i :int; j:int*;}",
 
-        /* "struct C4 {i:int; j:int;}", */
-        /* "func CF1(v: C4, w: C4):C4 {return {1,2};}", */
-        /* "var co:C4 = CF1(C4{1,2}, {2,3})", */
-        /* "struct cVector{x,y:int;}", */
-        /* "var v: cVector = 0 ? {1,2} : {3,4}", */
-        /* "var vs:cVector[2][2] = {{{1,2},{3,4}},{{5,6},{7,8}}}", */
-        /* "struct nVector{x,y:int;}", */
-        /* "var tVector = nVector{x=10,y=10}", */
-        /* "var t2vector = (:int[2]){1,2}", */
-        /* "var t3vector = (:int[2]){[1] = 1},", */
-        /* "var testM = (:nVector[2]){{},{}}", */
+        "struct C4 {i:int; j:int;}",
+        "func CF1(v: C4, w: C4):C4 {return {1,2};}",
+        "var co:C4 = CF1(C4{1,2}, {2,3})",
+        "struct cVector{x,y:int;}",
+        "var v: cVector = 0 ? {1,2} : {3,4}",
+        "var vs:cVector[2][2] = {{{1,2},{3,4}},{{5,6},{7,8}}}",
+        "struct nVector{x,y:int;}",
+        "var tVector = nVector{x=10,y=10}",
+        "var t2vector = (:int[2]){1,2}",
+        "var t3vector = (:int[2]){[1] = 1},",
+        "var testM = (:nVector[2]){{},{}}",
     };
 
     create_base_types();
