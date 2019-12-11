@@ -205,6 +205,9 @@ bool is_type_conversion_legal(Type *src, Type *dst) {
 }
 
 void convert_operand_type(ResolvedExpr *expr, Type *type) {
+    if (!is_type_conversion_legal(expr->type, type)) {
+        return;
+    }
 
 #define TYPE_CONVERT(VAL)                                                                          \
     {                                                                                              \
@@ -345,7 +348,7 @@ Type *convert_to_unsigned(Type *type) {
     return NULL;
 }
 
-void convert_operands_internal(ResolvedExpr *e1, ResolvedExpr *e2) {
+void convert_binary_operands_internal(ResolvedExpr *e1, ResolvedExpr *e2) {
 
     // If either of the types is double, convert the other to double
     if (e1->type == type_double || e2->type == type_double) {
@@ -361,6 +364,7 @@ void convert_operands_internal(ResolvedExpr *e1, ResolvedExpr *e2) {
         return;
     }
 
+    assert(is_integer_type(e1->type) && is_integer_type(e2->type));
     // When dealing with integer types, first do integer promotion.
     promote_integer(e1);
     promote_integer(e2);
@@ -431,8 +435,8 @@ void convert_operands_internal(ResolvedExpr *e1, ResolvedExpr *e2) {
     assert(0);
 }
 
-void convert_operands(ResolvedExpr *e1, ResolvedExpr *e2) {
-    convert_operands_internal(e1, e2);
+void convert_binary_operands(ResolvedExpr *e1, ResolvedExpr *e2) {
+    convert_binary_operands_internal(e1, e2);
     assert(e1->type == e2->type);
 }
 
@@ -510,7 +514,7 @@ void create_base_types() {
         .name = str_intern("float"), .state = SYM_RESOLVED, .kind = SYM_TYPE, .type = type_float});
 
     insert_global_syms((Sym){
-        .name = str_intern("float"), .state = SYM_RESOLVED, .kind = SYM_TYPE, .type = type_double});
+        .name = str_intern("double"), .state = SYM_RESOLVED, .kind = SYM_TYPE, .type = type_double});
 }
 
 void install_global_decl(Decl *decl) {
@@ -937,7 +941,7 @@ unsigned long long eval_binary_ulonglong_expr(Expr *expr, unsigned long long lef
 ResolvedExpr resolve_binary_expr(Expr *expr) {
     ResolvedExpr expr_left = resolve_expr(expr->binary_expr.left);
     ResolvedExpr expr_right = resolve_expr(expr->binary_expr.right);
-    convert_operands(&expr_left, &expr_right);
+    convert_binary_operands(&expr_left, &expr_right);
     Type *bin_expr_type = expr_left.type;
 
     ResolvedExpr eval_const_expr = {};
@@ -1141,6 +1145,7 @@ ResolvedExpr resolve_cast_expr(Expr *expr) {
 }
 
 size_t get_index_field(Expr *expr, Type *type, const char *name) {
+
     if (type->kind != TYPE_STRUCT && type->kind != TYPE_UNION) {
         fatal_error(expr, "only struct and union types can have index to fields");
     }
@@ -1176,12 +1181,26 @@ ResolvedExpr resolve_compound_expr(Expr *expr, Type *expected_type) {
 
     complete_type(expected_type);
 
-    if (expected_type->kind != TYPE_STRUCT && expected_type->kind != TYPE_UNION &&
-        expected_type->kind != TYPE_ARRAY) {
-        fatal_error(expr, "compound expression requires struct or array types");
-    }
+    if (is_scalar_type(expected_type)) {
+        if (expr->compound_expr.num_args != 1) {
+            fatal_error(expr,
+                        "scalar compound expressions can not have more than one compound literal");
+        }
 
-    if (expected_type->kind == TYPE_STRUCT || expected_type->kind == TYPE_UNION) {
+        CompoundVal *val = expr->compound_expr.args[0];
+        if (val->kind != SIMPLE_EXPR) {
+            fatal_error(expr, "scalar compound expression literal has to be a simple expression");
+            return rvalue_expr(type_void);
+        }
+
+        Expr *expr_literal = val->expr;
+        ResolvedExpr resolved_arg = resolve_expected_expr(expr_literal, expected_type);
+        if (!is_scalar_type(resolved_arg.type)) {
+            fatal_error(expr, "type of expression in compound literal: %s type expected %s",
+                        type_kind[resolved_arg.type->kind], type_kind[expected_type->kind]);
+            return rvalue_expr(type_void);
+        }
+    } else if (expected_type->kind == TYPE_STRUCT || expected_type->kind == TYPE_UNION) {
         if (expr->compound_expr.type != NULL && expected_type != NULL) {
             if (create_type(expr->compound_expr.type) != expected_type) {
                 fatal_error(expr,
@@ -1229,9 +1248,8 @@ ResolvedExpr resolve_compound_expr(Expr *expr, Type *expected_type) {
                 return rvalue_expr(type_void);
             }
         }
-    } else {
+    } else if (expected_type->kind == TYPE_ARRAY) {
         if (expr->compound_expr.type != NULL && expected_type != NULL) {
-
             if ((compound_expr_type->array.elem != expected_type->array.elem) ||
                 (compound_expr_type->array.size != expected_type->array.size)) {
                 fatal_error(expr, "array compound literals types do not match");
@@ -1650,9 +1668,7 @@ void resolve_stmt(Stmt *stmt, Type *expected_type, Sym *scope_start) {
         }
 
         if (right_expr.type != type_void) {
-            if (is_type_conversion_legal(left_expr.type, right_expr.type)) {
-                convert_operand_type(&left_expr, right_expr.type);
-            }
+            convert_operand_type(&left_expr, right_expr.type);
 
             if (left_expr.type != right_expr.type) {
                 fatal_error(
@@ -1734,7 +1750,7 @@ void test_type_conversion() {
     {                                                                                              \
         expr1.type = type_first;                                                                   \
         expr2.type = type_second;                                                                  \
-        convert_operands(&expr1, &expr2);                                                          \
+        convert_binary_operands(&expr1, &expr2);                                                   \
         assert(expr1.type == converted_type);                                                      \
     }
 
@@ -1742,6 +1758,7 @@ void test_type_conversion() {
     convert_arithmetic_type(type_char, type_ushort, type_int);
     convert_arithmetic_type(type_int, type_long, type_long);
     convert_arithmetic_type(type_long, type_ulong, type_ulong);
+
 #undef convert_arithmetic_type
 
     ResolvedExpr expr3;

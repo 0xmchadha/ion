@@ -77,6 +77,7 @@ typedef struct StmtAssign {
 typedef struct StmtInit {
     const char *name;
     Expr *expr;
+    // This is a hack required while generating c code.
     void *type;
 } StmtInit;
 

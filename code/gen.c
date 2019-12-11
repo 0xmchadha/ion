@@ -377,7 +377,7 @@ void gen_stmt(Stmt *stmt) {
         if (stmt->stmt_for.init) {
             Stmt *init = stmt->stmt_for.init;
             if (init->kind == STMT_INIT) {
-                str = strf("%s = %s; ", str, type_to_cdecl(init->stmt_init.type, init->stmt_init.name));
+                str = strf("%s%s = %s; ", str, type_to_cdecl(init->stmt_init.type, init->stmt_init.name), gen_expr(init->stmt_init.expr));
             } else if (init->kind == STMT_ASSIGN) {
                 str = strf("%s%s %s %s;", str, gen_expr(init->stmt_assign.left_expr),
                            token_kind_name(init->stmt_assign.op),
