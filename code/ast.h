@@ -146,6 +146,8 @@ typedef struct FuncDecl {
     FuncArg *args;
     Typespec *type;
     StmtBlock block;
+    bool is_variadic;
+    bool is_foreign;
 } FuncDecl;
 
 typedef struct TypedefDecl {

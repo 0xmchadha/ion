@@ -135,6 +135,7 @@ typedef struct Type {
             Type **args;
             size_t num_args;
             Type *ret_type;
+            bool is_variadic;
         } func;
     };
 } Type;
@@ -185,7 +186,7 @@ typedef struct ResolvedExpr {
 
 ResolvedExpr resolve_expr(Expr *expr);
 ResolvedExpr resolve_expected_expr(Expr *expr, Type *expected_type);
-Type *type_func(Type **args, size_t num_args, Type *ret_type);
+Type *type_func(Type **args, size_t num_args, Type *ret_type, bool is_variadic);
 Type *type_ptr(Type *elem);
 Sym *sym_get(const char *name);
 void resolve_stmt(Stmt *stmt, Type *expected_type, Sym *scope_start);
@@ -448,14 +449,13 @@ void insert_global_syms(Sym sym) {
     buf_push(global_sym_list, sym_alloc);
 }
 
-void export_c_func() {
+void export_printf_func() {
     Type **args = NULL;
-
     buf_push(args, type_ptr(type_char));
-    insert_global_syms((Sym){.name = str_intern("puts"),
+    insert_global_syms((Sym){.name = str_intern("printf"),
                              .state = SYM_RESOLVED,
                              .kind = SYM_FUNC,
-                             .type = type_func(args, 1, type_int)});
+                             .type = type_func(args, 1, type_int, true)});
 }
 
 void create_base_types() {
@@ -466,20 +466,16 @@ void create_base_types() {
     insert_global_syms((Sym){
         .name = str_intern("char"), .state = SYM_RESOLVED, .kind = SYM_TYPE, .type = type_char});
 
-    insert_global_syms((Sym){.name = str_intern("signed char"),
-                             .state = SYM_RESOLVED,
-                             .kind = SYM_TYPE,
-                             .type = type_schar});
+    insert_global_syms((Sym){
+        .name = str_intern("schar"), .state = SYM_RESOLVED, .kind = SYM_TYPE, .type = type_schar});
 
-    insert_global_syms((Sym){.name = str_intern("unsigned char"),
-                             .state = SYM_RESOLVED,
-                             .kind = SYM_TYPE,
-                             .type = type_uchar});
+    insert_global_syms((Sym){
+        .name = str_intern("uchar"), .state = SYM_RESOLVED, .kind = SYM_TYPE, .type = type_uchar});
 
     insert_global_syms((Sym){
         .name = str_intern("short"), .state = SYM_RESOLVED, .kind = SYM_TYPE, .type = type_short});
 
-    insert_global_syms((Sym){.name = str_intern("unsigned short"),
+    insert_global_syms((Sym){.name = str_intern("ushort"),
                              .state = SYM_RESOLVED,
                              .kind = SYM_TYPE,
                              .type = type_ushort});
@@ -487,25 +483,21 @@ void create_base_types() {
     insert_global_syms((Sym){
         .name = str_intern("int"), .state = SYM_RESOLVED, .kind = SYM_TYPE, .type = type_int});
 
-    insert_global_syms((Sym){.name = str_intern("unsigned int"),
-                             .state = SYM_RESOLVED,
-                             .kind = SYM_TYPE,
-                             .type = type_uint});
+    insert_global_syms((Sym){
+        .name = str_intern("uint"), .state = SYM_RESOLVED, .kind = SYM_TYPE, .type = type_uint});
 
     insert_global_syms((Sym){
         .name = str_intern("long"), .state = SYM_RESOLVED, .kind = SYM_TYPE, .type = type_long});
 
-    insert_global_syms((Sym){.name = str_intern("unsigned long"),
-                             .state = SYM_RESOLVED,
-                             .kind = SYM_TYPE,
-                             .type = type_ulong});
+    insert_global_syms((Sym){
+        .name = str_intern("ulong"), .state = SYM_RESOLVED, .kind = SYM_TYPE, .type = type_ulong});
 
-    insert_global_syms((Sym){.name = str_intern("long long"),
+    insert_global_syms((Sym){.name = str_intern("llong"),
                              .state = SYM_RESOLVED,
                              .kind = SYM_TYPE,
                              .type = type_longlong});
 
-    insert_global_syms((Sym){.name = str_intern("unsigned long long"),
+    insert_global_syms((Sym){.name = str_intern("ullong"),
                              .state = SYM_RESOLVED,
                              .kind = SYM_TYPE,
                              .type = type_ulonglong});
@@ -513,8 +505,10 @@ void create_base_types() {
     insert_global_syms((Sym){
         .name = str_intern("float"), .state = SYM_RESOLVED, .kind = SYM_TYPE, .type = type_float});
 
-    insert_global_syms((Sym){
-        .name = str_intern("double"), .state = SYM_RESOLVED, .kind = SYM_TYPE, .type = type_double});
+    insert_global_syms((Sym){.name = str_intern("double"),
+                             .state = SYM_RESOLVED,
+                             .kind = SYM_TYPE,
+                             .type = type_double});
 }
 
 void install_global_decl(Decl *decl) {
@@ -619,15 +613,20 @@ typedef struct CachedFuncType {
         Type **args;
         size_t num_args;
         Type *ret_type;
+        bool is_variadic;
     };
     Type *type;
 } CachedFuncType;
 
 CachedFuncType *cached_func_types;
 
-Type *type_func(Type **args, size_t num_args, Type *ret_type) {
+Type *type_func(Type **args, size_t num_args, Type *ret_type, bool is_variadic) {
     for (int i = 0; i < buf_len(cached_func_types); i++) {
         if (num_args != cached_func_types[i].num_args) {
+            continue;
+        }
+
+        if (cached_func_types[i].is_variadic != is_variadic) {
             continue;
         }
 
@@ -648,8 +647,9 @@ Type *type_func(Type **args, size_t num_args, Type *ret_type) {
     type->func.args = AST_DUP(args);
     type->func.num_args = num_args;
     type->func.ret_type = ret_type;
+    type->func.is_variadic = is_variadic;
 
-    buf_push(cached_func_types, (CachedFuncType){args, num_args, ret_type, type});
+    buf_push(cached_func_types, (CachedFuncType){args, num_args, ret_type, is_variadic, type});
 
     return type;
 }
@@ -700,7 +700,7 @@ Type *create_type(Typespec *type) {
             buf_push(func_args, ptr_decay(create_type(type->func.args[i])));
         }
         Type *ret_type = create_type(type->func.ret);
-        return type_func(func_args, buf_len(func_args), ret_type);
+        return type_func(func_args, buf_len(func_args), ret_type, false);
     }
     }
 
@@ -1022,45 +1022,60 @@ ResolvedExpr resolve_name_expr(Expr *expr) {
     return (ResolvedExpr){};
 }
 
+ResolvedExpr resolve_unary_op(Expr *expr, ResolvedExpr *operand, Type *final_type) {
+    if (operand->is_const) {
+        if (is_signed_type(operand->type)) {
+            convert_operand_type(operand, type_longlong);
+            operand->val.ll = eval_unary_longlong_expr(expr, expr->unary_expr.op, operand->val.ll);
+        } else {
+            convert_operand_type(operand, type_ulonglong);
+            operand->val.ull =
+                eval_unary_ulonglong_expr(expr, expr->unary_expr.op, operand->val.ull);
+        }
+
+        convert_operand_type(operand, final_type);
+        return const_expr(final_type, operand->val);
+    } else {
+        return rvalue_expr(final_type);
+    }
+}
+
 ResolvedExpr resolve_unary_expr(Expr *expr) {
     // *,&,+,-,~,!
     ResolvedExpr operand = resolve_expr(expr->unary_expr.expr);
-    switch (expr->unary_expr.op) {
-    case TOKEN_MUL:
+    TokenKind op = expr->unary_expr.op;
+
+    if (op == TOKEN_MUL) {
         operand.type = ptr_decay(operand.type);
         if (operand.type->kind != TYPE_PTR) {
             fatal_error(expr, "Can deref only a pointer type");
         }
         return lvalue_expr(operand.type->ptr.elem);
-    case TOKEN_AND:
+    } else if (op == TOKEN_AND) {
+        if (!operand.is_lvalue) {
+            fatal_error(expr, "can not take address of an rvalue expression");
+        }
         return rvalue_expr(type_ptr(operand.type));
-    case TOKEN_ADD:
-    case TOKEN_SUB:
-    case TOKEN_NEG:
-        promote_integer(&operand);
+    } else if (op == TOKEN_ADD || op == TOKEN_SUB) {
         if (!is_arithmetic_type(operand.type)) {
-            fatal_error(expr, "unary operator +, -, ~ are applied on integer types only");
+            fatal_error(expr, "unary operator +, - are applied on arithmetic types only");
         }
-    default: {
-        if (operand.is_const) {
-            Type *original_type = operand.type;
-            if (is_signed_type(operand.type)) {
-                convert_operand_type(&operand, type_longlong);
-                operand.val.ll =
-                    eval_unary_longlong_expr(expr, expr->unary_expr.op, operand.val.ll);
-            } else {
-                convert_operand_type(&operand, type_ulonglong);
-                operand.val.ull =
-                    eval_unary_ulonglong_expr(expr, expr->unary_expr.op, operand.val.ull);
-            }
-
-            convert_operand_type(&operand, original_type);
-            return const_expr(original_type, operand.val);
+        promote_integer(&operand);
+        return resolve_unary_op(expr, &operand, operand.type);
+    } else if (op == TOKEN_NEG) {
+        if (!is_integer_type(operand.type)) {
+            fatal_error(expr, "unary operator ~ are applied on integer types only");
         }
+        promote_integer(&operand);
+        return resolve_unary_op(expr, &operand, operand.type);
+    } else if (op == TOKEN_NOT) {
+        if (!is_scalar_type(operand.type)) {
+            fatal_error(expr, "unary operator ! requires scalar types");
+        }
+        return resolve_unary_op(expr, &operand, type_int);
+    }
 
-        return rvalue_expr(operand.type);
-    }
-    }
+    assert(0);
 }
 
 ResolvedExpr resolve_field_expr(Expr *expr) {
@@ -1108,12 +1123,17 @@ ResolvedExpr resolve_call_expr(Expr *expr) {
         fatal_error(expr, "Expected type to be func");
     }
 
-    if (expr->call_expr.num_args != func.type->func.num_args) {
+    if (!func.type->func.is_variadic && expr->call_expr.num_args != func.type->func.num_args) {
         fatal_error(expr, "func required %d arguments, but being passed %d",
+                    func.type->func.num_args, expr->call_expr.num_args);
+    } else if (func.type->func.is_variadic && expr->call_expr.num_args < func.type->func.num_args) {
+        fatal_error(expr,
+                    "less arguments being passed to a variadic function: required %d arguments, "
+                    "but being passed %d",
                     func.type->func.num_args, expr->call_expr.num_args);
     }
 
-    for (int i = 0; i < expr->call_expr.num_args; i++) {
+    for (int i = 0; i < func.type->func.num_args; i++) {
         ResolvedExpr expr_args =
             resolve_expected_expr(expr->call_expr.args[i], func.type->func.args[i]);
         expr_args.type = ptr_decay(expr_args.type);
@@ -1123,6 +1143,10 @@ ResolvedExpr resolve_call_expr(Expr *expr) {
                         i, type_kind[expr_args.type->kind],
                         type_kind[func.type->func.args[i]->kind]);
         }
+    }
+
+    for (int i = func.type->func.num_args; i < expr->call_expr.num_args; i++) {
+        resolve_expr(expr->call_expr.args[i]);
     }
 
     return rvalue_expr(func.type->func.ret_type);
@@ -1190,7 +1214,7 @@ ResolvedExpr resolve_compound_expr(Expr *expr, Type *expected_type) {
         CompoundVal *val = expr->compound_expr.args[0];
         if (val->kind != SIMPLE_EXPR) {
             fatal_error(expr, "scalar compound expression literal has to be a simple expression");
-            return rvalue_expr(type_void);
+            return lvalue_expr(type_void);
         }
 
         Expr *expr_literal = val->expr;
@@ -1198,7 +1222,7 @@ ResolvedExpr resolve_compound_expr(Expr *expr, Type *expected_type) {
         if (!is_scalar_type(resolved_arg.type)) {
             fatal_error(expr, "type of expression in compound literal: %s type expected %s",
                         type_kind[resolved_arg.type->kind], type_kind[expected_type->kind]);
-            return rvalue_expr(type_void);
+            return lvalue_expr(type_void);
         }
     } else if (expected_type->kind == TYPE_STRUCT || expected_type->kind == TYPE_UNION) {
         if (expr->compound_expr.type != NULL && expected_type != NULL) {
@@ -1206,14 +1230,14 @@ ResolvedExpr resolve_compound_expr(Expr *expr, Type *expected_type) {
                 fatal_error(expr,
                             "Expected type of compound literal should match the declared type of "
                             "compound literal");
-                return rvalue_expr(type_void);
+                return lvalue_expr(type_void);
             }
         }
 
         if (expected_type->aggregate.num_fields < expr->compound_expr.num_args) {
             fatal_error(expr,
                         "Actual type has fewer memebers than being passed in the compound literal");
-            return rvalue_expr(type_void);
+            return lvalue_expr(type_void);
         }
 
         for (size_t i = 0, j = 0; i < expr->compound_expr.num_args; i++, j++) {
@@ -1245,7 +1269,7 @@ ResolvedExpr resolve_compound_expr(Expr *expr, Type *expected_type) {
                 fatal_error(expr, "type of expression in compound literal: %s type expected %s",
                             type_kind[resolved_arg.type->kind],
                             type_kind[expected_type->aggregate.fields[j].type->kind]);
-                return rvalue_expr(type_void);
+                return lvalue_expr(type_void);
             }
         }
     } else if (expected_type->kind == TYPE_ARRAY) {
@@ -1265,7 +1289,7 @@ ResolvedExpr resolve_compound_expr(Expr *expr, Type *expected_type) {
         }
 
         size_t max_index = 0;
-        for (size_t i = 0, array_index = 0; i < expr->compound_expr.num_args; i++, array_index++) {
+         for (size_t i = 0, array_index = 0; i < expr->compound_expr.num_args; i++, array_index++) {
             if (expected_type->array.size && array_index >= expected_type->array.size) {
                 fatal_error(expr, "compound literal initializing array out of bounds");
             }
@@ -1307,7 +1331,7 @@ ResolvedExpr resolve_compound_expr(Expr *expr, Type *expected_type) {
             if (resolved_arg.type != expected_type->array.elem) {
                 fatal_error(expr, "type of expression: %s expected type %s",
                             type_kind[resolved_arg.type->kind], type_kind[resolved_arg.type->kind]);
-                return rvalue_expr(type_void);
+                return lvalue_expr(type_void);
             }
             max_index = MAX(max_index, array_index);
         }
@@ -1315,7 +1339,7 @@ ResolvedExpr resolve_compound_expr(Expr *expr, Type *expected_type) {
         *expected_type = *type_array(expected_type->array.elem, max_index + 1);
     }
 
-    return rvalue_expr(expected_type);
+    return lvalue_expr(expected_type);
 }
 
 ResolvedExpr resolve_ternary_expr(Expr *expr, Type *expected_type) {
@@ -1352,7 +1376,7 @@ ResolvedExpr resolve_sizeof_expr(Expr *expr) {
     return const_expr(type_size_t, (Val){.ull = type_expr.type->size});
 }
 
-ResolvedExpr resolve_expected_expr_internal(Expr *expr, Type *expected_type) {
+ResolvedExpr resolve_expected_expr(Expr *expr, Type *expected_type) {
     if (!expr) {
         return (ResolvedExpr){.type = type_void};
     }
@@ -1388,26 +1412,6 @@ ResolvedExpr resolve_expected_expr_internal(Expr *expr, Type *expected_type) {
         assert(0);
         return (ResolvedExpr){};
     }
-}
-
-Map expr_to_type;
-
-ResolvedExpr resolve_expected_expr(Expr *expr, Type *expected_type) {
-    ResolvedExpr *e;
-
-    // if expr is null do not put it in the hash table.
-    /* if (expr) { */
-    /*     if (!(e = (ResolvedExpr *) map_get(&expr_to_type, expr))) { */
-    /*         ResolvedExpr resolved = resolve_expected_expr_internal(expr, expected_type); */
-    /*         e = xmalloc(sizeof(ResolvedExpr)); */
-    /*         *e = resolved; */
-    /*         map_put(&expr_to_type, expr, e); */
-    /*     } else { */
-    /*         return *e; */
-    /*     } */
-    /* } */
-
-    return resolve_expected_expr_internal(expr, expected_type);
 }
 
 ResolvedExpr resolve_expr(Expr *expr) {
@@ -1485,7 +1489,7 @@ void resolve_global_sym(Sym *sym) {
             buf_push(func_args, type);
         }
         Type *ret_type = create_type(decl->func_decl.type);
-        sym->type = type_func(func_args, buf_len(func_args), ret_type);
+        sym->type = type_func(func_args, buf_len(func_args), ret_type, decl->func_decl.is_variadic);
         break;
     }
     case DECL_TYPEDEF: {

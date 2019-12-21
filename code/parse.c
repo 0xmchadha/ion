@@ -107,19 +107,25 @@ FuncArg parse_decl_func_arg() {
     return (FuncArg){name, type};
 }
 
-Decl *parse_decl_func() {
+Decl *parse_decl_func(bool is_foreign) {
     SrcPos pos = token.pos;
     FuncArg *args = NULL;
     Typespec *ret_type = NULL;
-
+    bool is_variadic = false;
     const char *name = parse_name();
 
     expect_token(TOKEN_LPAREN);
     if (is_token(TOKEN_NAME)) {
         buf_push(args, parse_decl_func_arg());
-    }
-    while (match_token(TOKEN_COMMA)) {
-        buf_push(args, parse_decl_func_arg());
+
+        while (match_token(TOKEN_COMMA)) {
+            if (is_token(TOKEN_ELLIPSIS)) {
+                is_variadic = true;
+                next_token();
+                break;
+            }
+            buf_push(args, parse_decl_func_arg());
+        }
     }
     expect_token(TOKEN_RPAREN);
     if (match_token(TOKEN_COLON)) {
@@ -127,7 +133,7 @@ Decl *parse_decl_func() {
     }
 
     StmtBlock block = parse_stmtblock();
-    return decl_func(name, pos, args, buf_len(args), ret_type, block);
+    return decl_func(name, pos, args, buf_len(args), ret_type, block, is_foreign, is_variadic);
 }
 
 Decl *parse_decl_typedef() {
@@ -139,6 +145,7 @@ Decl *parse_decl_typedef() {
 }
 
 Decl *parse_decl_opt() {
+    bool foreign_decl = false;
     if (match_keyword(keyword_enum)) {
         return parse_decl_enum();
     } else if (match_keyword(keyword_struct)) {
@@ -150,9 +157,13 @@ Decl *parse_decl_opt() {
     } else if (match_keyword(keyword_const)) {
         return parse_decl_const();
     } else if (match_keyword(keyword_func)) {
-        return parse_decl_func();
+        return parse_decl_func(false);
     } else if (match_keyword(keyword_typedef)) {
         return parse_decl_typedef();
+    } else if (match_keyword(keyword_foreign)) {
+        if (match_keyword(keyword_func)) {
+            return parse_decl_func(true);
+        }
     }
 
     return NULL;

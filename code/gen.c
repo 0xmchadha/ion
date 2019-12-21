@@ -26,12 +26,13 @@ const char *type_to_cdecl(Type *t, const char *gen) {
         return strf("int %s", gen);
     case TYPE_CHAR:
         return strf("char %s", gen);
+    case TYPE_UCHAR:
+        return strf("unsigned char %s", gen);
     case TYPE_FLOAT:
         return strf("float %s", gen);
     case TYPE_PTR:
         return type_to_cdecl(t->ptr.elem, ((gen == "") ? strf("*") : strf("*(%s)", gen)));
     case TYPE_ARRAY:
-        // (var foo (array (ptr int) 10)) --> int *(foo[10])
         if (gen == "") {
             return type_to_cdecl(t->array.elem, strf("[%d]", t->array.size));
         } else {
@@ -168,19 +169,21 @@ void gen_decl(Decl *decl) {
 
     case DECL_FUNC: {
         const char *args;
-
-        if (decl->func_decl.num_func_args == 0) {
-            args = strf("void");
-        } else {
-            args = typespec_to_cdecl(decl->func_decl.args[0].type, decl->func_decl.args[0].name);
+        if (!decl->func_decl.is_foreign) {
+            if (decl->func_decl.num_func_args == 0) {
+                args = strf("void");
+            } else {
+                args =
+                    typespec_to_cdecl(decl->func_decl.args[0].type, decl->func_decl.args[0].name);
+            }
+            for (int i = 1; i < decl->func_decl.num_func_args; i++) {
+                args = strf(
+                    "%s, %s", args,
+                    typespec_to_cdecl(decl->func_decl.args[i].type, decl->func_decl.args[i].name));
+            }
+            genln("%s", typespec_to_cdecl(decl->func_decl.type, strf("%s(%s)", decl->name, args)));
+            gen_stmtblock(decl->func_decl.block);
         }
-        for (int i = 1; i < decl->func_decl.num_func_args; i++) {
-            args =
-                strf("%s, %s", args,
-                     typespec_to_cdecl(decl->func_decl.args[i].type, decl->func_decl.args[i].name));
-        }
-        genln("%s", typespec_to_cdecl(decl->func_decl.type, strf("%s(%s)", decl->name, args)));
-        gen_stmtblock(decl->func_decl.block);
         break;
     }
 
@@ -377,7 +380,9 @@ void gen_stmt(Stmt *stmt) {
         if (stmt->stmt_for.init) {
             Stmt *init = stmt->stmt_for.init;
             if (init->kind == STMT_INIT) {
-                str = strf("%s%s = %s; ", str, type_to_cdecl(init->stmt_init.type, init->stmt_init.name), gen_expr(init->stmt_init.expr));
+                str = strf("%s%s = %s; ", str,
+                           type_to_cdecl(init->stmt_init.type, init->stmt_init.name),
+                           gen_expr(init->stmt_init.expr));
             } else if (init->kind == STMT_ASSIGN) {
                 str = strf("%s%s %s %s;", str, gen_expr(init->stmt_assign.left_expr),
                            token_kind_name(init->stmt_assign.op),
@@ -471,7 +476,7 @@ void generate_types() {
     for (Decl **decl = ordered_decls; decl != buf_end(ordered_decls); decl++) {
         if ((*decl)->kind != DECL_FUNC) {
             gen_decl(*decl);
-        } else if ((*decl)->kind == DECL_FUNC) {
+        } else if ((*decl)->kind == DECL_FUNC && !(*decl)->func_decl.is_foreign) {
             genln("%s;", type_to_cdecl((*decl)->sym->type, (*decl)->name));
         }
     }
@@ -617,11 +622,12 @@ void gen_unit_test() {
     printf("/*****codegen tests *****/\n\n");
     printf("%s\n", type_to_cdecl(type_ptr(type_int), "foo"));
     printf("%s\n", type_to_cdecl(type_array(type_int, 10), "foo"));
-    printf("%s\n", type_to_cdecl(type_func((Type *[2]){type_int, type_int}, 2, type_void), "foo"));
+    printf("%s\n",
+           type_to_cdecl(type_func((Type *[2]){type_int, type_int}, 2, type_void, false), "foo"));
     // declare foo as a pointer to func returning array 10 of func pointers returning int
-    Type *pointer_to_func_return_int = type_func(NULL, 0, type_void);
+    Type *pointer_to_func_return_int = type_func(NULL, 0, type_void, false);
     Type *array_10_of_pointers = type_array(pointer_to_func_return_int, 10);
-    Type *func = type_func(NULL, 0, array_10_of_pointers);
+    Type *func = type_func(NULL, 0, array_10_of_pointers, false);
     Type *func_ptr = func;
 
     printf("%s\n", type_to_cdecl(func_ptr, "foo"));

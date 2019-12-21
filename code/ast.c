@@ -55,12 +55,15 @@ Decl *decl_aggregate(AggregateKind kind, SrcPos pos, const char *name, Aggregate
     return decl;
 }
 
-Decl *decl_func(const char *name, SrcPos pos, FuncArg *args, size_t num_args, Typespec *type, StmtBlock block) {
+Decl *decl_func(const char *name, SrcPos pos, FuncArg *args, size_t num_args, Typespec *type,
+                StmtBlock block, bool is_foreign, bool is_variadic) {
     Decl *decl = decl_new(DECL_FUNC, pos, name);
     decl->func_decl.args = AST_DUP(args);
     decl->func_decl.num_func_args = num_args;
     decl->func_decl.type = type;
     decl->func_decl.block = block;
+    decl->func_decl.is_variadic = is_variadic;
+    decl->func_decl.is_foreign = is_foreign;
     return decl;
 }
 
@@ -161,7 +164,7 @@ Expr *expr_unary(SrcPos pos, TokenKind op, Expr *e) {
     return expr;
 }
 
-Expr *expr_call(SrcPos pos, Expr *e,  Expr **args, size_t num_args) {
+Expr *expr_call(SrcPos pos, Expr *e, Expr **args, size_t num_args) {
     Expr *expr = expr_new(EXPR_CALL, pos);
     expr->call_expr.expr = e;
     expr->call_expr.args = AST_DUP(args);

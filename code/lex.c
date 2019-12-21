@@ -18,6 +18,7 @@ const char *keyword_do;
 const char *keyword_switch;
 const char *keyword_case;
 const char *keyword_cast;
+const char *keyword_foreign;
 const char *keyword_default;
 
 const char *first_keyword;
@@ -54,10 +55,11 @@ void init_keywords() {
 	KEYWORD(switch);
 	KEYWORD(case);
 	KEYWORD(default);
+        KEYWORD(foreign);
 	assert(str_arena.end == arena_end);
 
 	first_keyword = keyword_typedef;
-	last_keyword = keyword_default;
+	last_keyword = keyword_foreign;
 }
 // clang-format on
 
@@ -69,6 +71,7 @@ bool is_token_keyword(const char *name) {
 
 typedef enum TokenKind {
     TOKEN_EOF = 0,
+    TOKEN_FOREIGN,
     TOKEN_QUESTION,
     TOKEN_COLON,
     TOKEN_LPAREN,
@@ -79,6 +82,7 @@ typedef enum TokenKind {
     TOKEN_RBRACES,
     TOKEN_COMMA,
     TOKEN_DOT,
+    TOKEN_ELLIPSIS,
     TOKEN_SEMICOLON,
     TOKEN_KEYWORD,
     TOKEN_INT,
@@ -158,6 +162,7 @@ const char *token_to_str[] = {
     [TOKEN_RBRACES] = "}",
     [TOKEN_COMMA] = ",",
     [TOKEN_DOT] = ".",
+    [TOKEN_ELLIPSIS] "...",
     [TOKEN_SEMICOLON] = ";",
     [TOKEN_NEG] = "~",
     [TOKEN_NOT] = "!",
@@ -413,6 +418,8 @@ void scan_str() {
 }
 
 void next_token() {
+    bool is_atrate = false;
+
 repeat:
 
     token.start = stream;
@@ -442,8 +449,13 @@ repeat:
         if (isdigit(stream[1])) {
             scan_float();
         } else {
-            token.kind = TOKEN_DOT;
-            stream++;
+            if (stream[1] == '.' && stream[2] == '.') {
+                token.kind = TOKEN_ELLIPSIS;
+                stream += 3;
+            } else {
+                token.kind = TOKEN_DOT;
+                stream++;
+            }
         }
         break;
     case '0':
@@ -468,6 +480,20 @@ repeat:
         }
         break;
     }
+    case '@':
+        is_atrate = true;
+        stream++;
+        /* stream++; */
+        /* /\* const char *str_foreign; *\/ */
+        /* /\* if (str_intern_range(&stream[1], &stream[1 + strlen("foreign")]) == keyword_foreign) { *\/ */
+        /* /\*     token.name = keyword_foreign; *\/ */
+        /* /\*     token.kind = TOKEN_KEYWORD; *\/ */
+        /* /\*     stream += strlen("foreign") + 1; *\/ */
+        /* /\* } else { *\/ */
+        /* /\*     syntax_error(token.pos, "only foreign keyword allowed after @ symbol"); *\/ */
+        /* /\* } *\/ */
+        /* break; */
+
     case 'a':
     case 'b':
     case 'c':
@@ -524,8 +550,18 @@ repeat:
         while (isalnum(*stream) || *stream == '_') {
             stream++;
         }
+
+        if (is_atrate) {
+            token.start++;
+            if (str_intern_range(token.start, stream) != keyword_foreign) {
+                syntax_error(token.pos, "Only foreign keyword is allowed after @");
+            }
+            is_atrate = false;
+        }
+
         token.name = str_intern_range(token.start, stream);
         token.kind = is_token_keyword(token.name) ? TOKEN_KEYWORD : TOKEN_NAME;
+        
         break;
 
 #define CASE1(a1, b)                                                                               \
@@ -727,12 +763,13 @@ static void lex_test() {
     assert_token_int(0);
 
     /* floating point test */
-    init_stream(NULL, "0xff 1.2 ! !=");
+    init_stream(NULL, "0xff 1.2 ! != ...");
     assert(token.mod == TOKENMOD_HEX);
     assert_token_int(255);
     assert_token_float(1.2);
     assert(match_token(TOKEN_NOT));
     assert(match_token(TOKEN_NOTEQ));
+    assert(match_token(TOKEN_ELLIPSIS));
     assert_token_eof();
 
     // char literal test
